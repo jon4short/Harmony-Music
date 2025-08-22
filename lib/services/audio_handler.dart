@@ -28,12 +28,13 @@ import '/models/media_Item_builder.dart';
 import '/services/utils.dart';
 import '../ui/screens/Settings/settings_screen_controller.dart';
 import '../ui/screens/Library/library_controller.dart';
-// ignore: unused_import, implementation_imports, depend_on_referenced_packages
-import "package:media_kit/src/player/platform_player.dart" show MPVLogLevel;
+import '/services/audio_handler_android_mk.dart';
+
+// Android media_kit handler re-enabled.
 
 Future<AudioHandler> initAudioService() async {
   return await AudioService.init(
-    builder: () => MyAudioHandler(),
+    builder: () => GetPlatform.isAndroid ? MyAudioHandlerAndroidMK() : MyAudioHandler(),
     config: const AudioServiceConfig(
       androidNotificationIcon: 'mipmap/ic_launcher_monochrome',
       androidNotificationChannelId: 'com.mycompany.myapp.audio',
@@ -58,6 +59,8 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
   bool queueLoopModeEnabled = false;
   bool shuffleModeEnabled = false;
   bool loudnessNormalizationEnabled = false;
+  // Pitch (UI-only for now). Stored for future Android DSP integration.
+  int _pitchSemitones = 0;
   // var networkErrorPause = false;
   bool isSongLoading = true;
 
@@ -655,6 +658,21 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
 
       case 'setVolume':
         _player.setVolume(extras!['value'] / 100);
+        break;
+
+      case 'setSpeed':
+        // value: double (e.g., 0.5 .. 2.0)
+        final double speed = (extras!['value'] as num).toDouble();
+        await _player.setSpeed(speed);
+        break;
+
+      case 'setPitch':
+        // UI-only stub. Value: int semitones (-6..6). No DSP applied yet.
+        try {
+          _pitchSemitones = (extras!['semitones'] as num).toInt();
+        } catch (_) {
+          // ignore malformed payloads
+        }
         break;
 
       case 'shuffleCmd':

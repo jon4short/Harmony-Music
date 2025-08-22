@@ -55,6 +55,9 @@ dependencies:
     git:
       url: https://github.com/anandnet/just_audio_media_kit.git
       ref: 3738e6bcc07e289ff9621cf2514f1906c99de9aa
+  # For Android pitch backend using mpv filters
+  media_kit: ^1.2.0
+  ffmpeg_kit_flutter_new_https: ^1.1.1
   palette_generator: ^0.3.3+4
   path: ^1.8.3
   path_provider: ^2.1.1
@@ -81,6 +84,9 @@ dependencies:
     git:
       url: https://github.com/anandnet/youtube_explode_dart.git
       ref: 1d9ec9baa806705b1d859260eeb389ec28c6b024
+  rxdart: any
+  media_kit_libs_android_audio: ^1.3.7
+
 dev_dependencies:
 
   # The "flutter_lints" package below contains a set of recommended lints to

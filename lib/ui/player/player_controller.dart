@@ -19,6 +19,7 @@ import '../screens/Home/home_screen_controller.dart';
 import '../widgets/sliding_up_panel.dart';
 import '/models/durationstate.dart';
 import '/services/music_service.dart';
+import '/services/key_detection_service.dart';
 
 class PlayerController extends GetxController
     with GetSingleTickerProviderStateMixin {
@@ -45,6 +46,16 @@ class PlayerController extends GetxController
   final isSleepTimerActive = false.obs;
   final isSleepEndOfSongActive = false.obs;
   final volume = 100.obs;
+  // Tempo (playback speed)
+  final speed = 1.0.obs; // 1.0 = normal
+
+  // Pitch control (in semitones). Positive = pitch up, negative = pitch down
+  final pitchSemitones = 0.obs; // range suggestion: -6 .. +6
+  final originalKey = 'N/A'.obs; // tonic only for internal transpose
+  final originalKeyLabel = 'N/A'.obs; // full label including mode for UI
+  // Key detection status: idle | detecting | done | failed
+  final keyDetectionStatus = 'idle'.obs;
+  bool _pitchInfoShown = false;
 
   final progressBarStatus = ProgressBarState(
           buffered: Duration.zero, current: Duration.zero, total: Duration.zero)
@@ -85,6 +96,143 @@ class PlayerController extends GetxController
     super.onInit();
   }
 
+  // --- Tempo / Speed ---
+  Future<void> setSpeed(double value) async {
+    // clamp allowed values (common safe range for just_audio)
+    final v = value.clamp(0.5, 2.0);
+    await _audioHandler.customAction("setSpeed", {"value": v});
+    speed.value = v;
+    await Hive.box("AppPrefs").put("playbackSpeed", v);
+  }
+
+  // --- BPM helpers ---
+  Future<double> getBaseBpmForCurrent({double defaultBpm = 120}) async {
+    final id = currentSong.value?.id;
+    if (id == null) return defaultBpm;
+    final box = Hive.isBoxOpen('TrackBPM')
+        ? Hive.box('TrackBPM')
+        : await Hive.openBox('TrackBPM');
+    final v = box.get(id);
+    if (v == null) return defaultBpm;
+    try {
+      return (v as num).toDouble();
+    } catch (_) {
+      return defaultBpm;
+    }
+  }
+
+  Future<void> setBaseBpmForCurrent(double bpm) async {
+    final id = currentSong.value?.id;
+    if (id == null) return;
+    final box = Hive.isBoxOpen('TrackBPM')
+        ? Hive.box('TrackBPM')
+        : await Hive.openBox('TrackBPM');
+    await box.put(id, bpm);
+  }
+
+  Future<double> getCurrentBpm({double defaultBpm = 120}) async {
+    final base = await getBaseBpmForCurrent(defaultBpm: defaultBpm);
+    return base * speed.value;
+  }
+
+  // --- Pitch (semitones) ---
+  void setPitchSemitones(int semis) {
+    // clamp to a sensible range; can be expanded later
+    final clamped = semis.clamp(-6, 6);
+    pitchSemitones.value = clamped;
+    // Inform backend; Android implementation may apply DSP when available
+    try {
+      _audioHandler.customAction('setPitch', {'semitones': clamped});
+    } catch (_) {}
+    // Show UI-only notice on non-Android platforms only.
+    if (!_pitchInfoShown && !GetPlatform.isAndroid) {
+      _pitchInfoShown = true;
+      final ctx = Get.context;
+      if (ctx != null) {
+        ScaffoldMessenger.of(ctx).showSnackBar(snackbar(
+          ctx,
+          'Pitch shifting is not yet implemented. UI only for now.',
+          size: SanckBarSize.SMALL,
+          duration: const Duration(seconds: 2),
+        ));
+      }
+    }
+  }
+
+  // Compute transposed key string for UI: "orig -> new" (preserves mode like 'minor'/'Mixolydian')
+  String transposedKeyLabel() {
+    final full = originalKeyLabel.value;
+    if (full == 'N/A' || full.isEmpty) return 'N/A';
+    final parts = full.split(' ');
+    final tonic = parts.first;
+    final suffix = parts.length > 1 ? parts.sublist(1).join(' ') : '';
+    final newTonic = _transposeKey(tonic, pitchSemitones.value);
+    final newLabel = suffix.isNotEmpty ? '$newTonic $suffix' : newTonic;
+    return '$full -> $newLabel';
+  }
+
+  // Helpers for simple key transpose in 12-TET using sharps.
+  static const List<String> _notes = [
+    'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'
+  ];
+
+  String _transposeKey(String key, int semitones) {
+    final base = key.toUpperCase().replaceAll('M', '').replaceAll('MAJ', '').trim();
+    final idx = _notes.indexOf(base);
+    if (idx == -1) return key; // unknown label, return as-is
+    final newIndex = (idx + semitones) % 12;
+    final wrapped = newIndex < 0 ? newIndex + 12 : newIndex;
+    return _notes[wrapped];
+  }
+
+  // --- Manual Key Override API (Controller helpers) ---
+  Future<void> setManualKeyOverride(String label) async {
+    try {
+      final id = currentSong.value?.id;
+      if (id == null) return;
+      await KeyDetectionService.setOverride(id, label);
+      final tonic = label.split(' ').first;
+      originalKey.value = tonic;
+      originalKeyLabel.value = label;
+      keyDetectionStatus.value = 'done';
+    } catch (_) {}
+  }
+
+  Future<void> clearManualKeyOverride({bool reDetect = false}) async {
+    try {
+      final id = currentSong.value?.id;
+      if (id == null) return;
+      await KeyDetectionService.clearOverride(id);
+      if (!reDetect) {
+        keyDetectionStatus.value = 'idle';
+        originalKey.value = 'N/A';
+        originalKeyLabel.value = 'N/A';
+        return;
+      }
+      // Optionally re-run detection
+      final url = currentSong.value?.extras != null
+          ? currentSong.value!.extras!['url'] as String?
+          : null;
+      final dur = progressBarStatus.value.total;
+      if (url != null && url.isNotEmpty && dur.inSeconds > 15) {
+        keyDetectionStatus.value = 'detecting';
+        final result = await KeyDetectionService.detectKey(
+          urlOrPath: url,
+          totalDuration: dur,
+          mediaId: id,
+        );
+        if (result != null && result.key.isNotEmpty) {
+          final tonic = result.key.split(' ').first;
+          originalKey.value = tonic;
+          originalKeyLabel.value = result.key;
+          keyDetectionStatus.value = 'done';
+        } else {
+          keyDetectionStatus.value = 'failed';
+        }
+      }
+    } catch (_) {}
+  }
+
   @override
   void onReady() {
     if (GetPlatform.isWindows) {
@@ -112,6 +260,10 @@ class PlayerController extends GetxController
     if (GetPlatform.isDesktop) {
       setVolume(appPrefs.get("volume") ?? 100);
     }
+
+    // initialize playback speed
+    final double initSpeed = (appPrefs.get("playbackSpeed") ?? 1.0).toDouble();
+    await setSpeed(initSpeed);
 
     if ((appPrefs.get("playerUi") ?? 0) == 1) {
       initGesturePlayerStateAnimationController();
@@ -250,6 +402,35 @@ class PlayerController extends GetxController
         if (Get.find<SettingsScreenController>().playerUi.value == 1) {
           gesturePlayerVisibleState.value = 2;
         }
+
+        // Trigger key detection asynchronously if URL & duration available
+        try {
+          // cancel any ongoing detection for previous track
+          KeyDetectionService.cancelOngoing();
+          originalKey.value = 'N/A';
+          final url = mediaItem.extras != null ? mediaItem.extras!['url'] as String? : null;
+          final dur = progressBarStatus.value.total;
+          if (url != null && url.isNotEmpty && dur.inSeconds > 15) {
+            Future.microtask(() async {
+              keyDetectionStatus.value = 'detecting';
+              final result = await KeyDetectionService.detectKey(
+                urlOrPath: url,
+                totalDuration: dur,
+                mediaId: mediaItem.id,
+              );
+              if (result != null && result.key.isNotEmpty) {
+                // store full original key label
+                originalKeyLabel.value = result.key;
+                // store tonic only for transpose compatibility
+                final tonic = result.key.split(' ').first;
+                originalKey.value = tonic;
+                keyDetectionStatus.value = 'done';
+              } else {
+                keyDetectionStatus.value = 'failed';
+              }
+            });
+          }
+        } catch (_) {}
       }
     });
   }
@@ -791,6 +972,10 @@ class PlayerController extends GetxController
 
   @override
   void dispose() {
+    // Ensure any in-flight key detection is cancelled
+    try {
+      KeyDetectionService.cancelOngoing();
+    } catch (_) {}
     _audioHandler.customAction('dispose');
     keyboardSubscription.cancel();
     scrollController.dispose();

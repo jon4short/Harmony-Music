@@ -588,7 +588,7 @@ class MusicServices extends getx.GetxService {
     String? type;
 
     for (var res in results) {
-      String category;
+      String? category;
       if (res.containsKey('musicCardShelfRenderer')) {
         //final topResult = parseTopResult(res['musicCardShelfRenderer'], ['artist', 'playlist', 'song', 'video', 'station']);
         //searchResults.add(topResult);
@@ -608,6 +608,10 @@ class MusicServices extends getx.GetxService {
         String? typeFilter = filter;
 
         category = nav(res, ['musicShelfRenderer', ...title_text]);
+        if (category == null) {
+          // Skip sections without a title to avoid null-as-String crashes
+          continue;
+        }
 
         if (typeFilter == null && scope == scopes[0]) {
           typeFilter = category;
@@ -618,18 +622,21 @@ class MusicServices extends getx.GetxService {
         continue;
       }
 
-      searchResults[category] = parseSearchResults(results,
-          ['artist', 'playlist', 'song', 'video', 'station'], type, category);
+      if (category != null) {
+        searchResults[category] = parseSearchResults(
+            results, ['artist', 'playlist', 'song', 'video', 'station'], type, category);
+      }
 
       if (filter != null) {
         requestFunc(additionalParams) async =>
             (await _sendRequest("search", data,
                     additionalParams: additionalParams))
                 .data;
+        // Note: category is guaranteed non-null in the guarded block below
         parseFunc(contents) => parseSearchResults(contents,
-            ['artist', 'playlist', 'song', 'video', 'station'], type, category);
+            ['artist', 'playlist', 'song', 'video', 'station'], type, category!);
 
-        if (searchResults.containsKey(category)) {
+        if (category != null && searchResults.containsKey(category)) {
           final x = await getContinuations(
               res['musicShelfRenderer'],
               'musicShelfContinuation',
