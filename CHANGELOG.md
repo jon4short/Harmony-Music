@@ -1,3 +1,8 @@
+## 1.13.0
+* Added Key detection feature
+* Added Pitch Shift feature
+* Added Playback Speed Change feature
+
 ## 1.12.0
 * Redesigned Album & Playlist screen
 * Added Basic Interface for Android Auto #496 #492 #427 #111
