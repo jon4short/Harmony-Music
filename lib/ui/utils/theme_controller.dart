@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:hive/hive.dart';
-import 'package:palette_generator/palette_generator.dart';
+import 'package:color_palette_plus/color_palette_plus.dart';
 import '/utils/helper.dart';
 
 class ThemeController extends GetxController {
@@ -62,19 +62,19 @@ class ThemeController extends GetxController {
 
   void setTheme(ImageProvider imageProvider, String songId) async {
     if (songId == currentSongId) return;
-    PaletteGenerator generator = await PaletteGenerator.fromImageProvider(
-        ResizeImage(imageProvider, height: 200, width: 200));
-    //final colorList = generator.colors;
-    final paletteColor = generator.dominantColor ??
-        generator.darkMutedColor ??
-        generator.darkVibrantColor ??
-        generator.lightMutedColor ??
-        generator.lightVibrantColor;
-    primaryColor.value = paletteColor!.color;
-    textColor.value = paletteColor.bodyTextColor;
+    // Use Material's ColorScheme extraction to derive a palette from the image
+    final scheme = await ColorScheme.fromImageProvider(
+      provider: ResizeImage(imageProvider, height: 200, width: 200),
+    );
+    final dominant = scheme.primary;
+    primaryColor.value = dominant;
+    // Derive readable text color against the dominant color
+    final brightness = ThemeData.estimateBrightnessForColor(dominant);
+    textColor.value =
+        brightness == Brightness.light ? Colors.black54 : Colors.white54;
     // printINFO(paletteColor.color.computeLuminance().toString());0.11 ref
-    if (paletteColor.color.computeLuminance() > 0.10) {
-      primaryColor.value = paletteColor.color.withLightness(0.10);
+    if (dominant.computeLuminance() > 0.10) {
+      primaryColor.value = dominant.withLightness(0.10);
       textColor.value = Colors.white54;
     }
     final primarySwatch = _createMaterialColor(primaryColor.value!);
@@ -82,7 +82,8 @@ class ThemeController extends GetxController {
         textColor: textColor.value,
         titleColorSwatch: _createMaterialColor(textColor.value));
     currentSongId = songId;
-    Hive.box('appPrefs').put("themePrimaryColor", (primaryColor.value!).value);
+    Hive.box('appPrefs')
+        .put("themePrimaryColor", primaryColor.value!.toARGB32());
     setWindowsTitleBarColor(themedata.value!.scaffoldBackgroundColor);
   }
 
@@ -93,7 +94,7 @@ class ThemeController extends GetxController {
         SystemUiOverlayStyle(
             statusBarIconBrightness: Brightness.light,
             statusBarColor: Colors.transparent,
-            systemNavigationBarColor: Colors.white.withOpacity(0.002),
+            systemNavigationBarColor: Colors.white.withValues(alpha: 0.002),
             systemNavigationBarDividerColor: Colors.transparent,
             systemNavigationBarIconBrightness: Brightness.light,
             systemStatusBarContrastEnforced: false,
@@ -170,7 +171,7 @@ class ThemeController extends GetxController {
         SystemUiOverlayStyle(
             statusBarIconBrightness: Brightness.light,
             statusBarColor: Colors.transparent,
-            systemNavigationBarColor: Colors.white.withOpacity(0.002),
+            systemNavigationBarColor: Colors.white.withValues(alpha: 0.002),
             systemNavigationBarDividerColor: Colors.transparent,
             systemNavigationBarIconBrightness: Brightness.light,
             systemStatusBarContrastEnforced: false,
@@ -241,7 +242,7 @@ class ThemeController extends GetxController {
         SystemUiOverlayStyle(
             statusBarIconBrightness: Brightness.dark,
             statusBarColor: Colors.transparent,
-            systemNavigationBarColor: Colors.white.withOpacity(0.002),
+            systemNavigationBarColor: Colors.white.withValues(alpha: 0.002),
             systemNavigationBarDividerColor: Colors.transparent,
             systemNavigationBarIconBrightness: Brightness.dark,
             systemStatusBarContrastEnforced: false,
@@ -312,23 +313,8 @@ class ThemeController extends GetxController {
   }
 
   MaterialColor _createMaterialColor(Color color) {
-    List strengths = <double>[.05];
-    Map<int, Color> swatch = {};
-    final int r = color.red, g = color.green, b = color.blue;
-
-    for (int i = 1; i < 10; i++) {
-      strengths.add(0.1 * i);
-    }
-    for (var strength in strengths) {
-      final double ds = 0.5 - strength;
-      swatch[(strength * 1000).round()] = Color.fromRGBO(
-        r + ((ds < 0 ? r : (255 - r)) * ds).round(),
-        g + ((ds < 0 ? g : (255 - g)) * ds).round(),
-        b + ((ds < 0 ? b : (255 - b)) * ds).round(),
-        1,
-      );
-    }
-    return MaterialColor(color.value, swatch);
+    // Use color_palette_plus to generate a MaterialColor swatch from the base color.
+    return ColorPalette.generateSwatch(color);
   }
 
   Future<void> setWindowsTitleBarColor(Color color) async {
@@ -337,9 +323,9 @@ class ThemeController extends GetxController {
       Future.delayed(
           const Duration(milliseconds: 350),
           () async => await platform.invokeMethod('setTitleBarColor', {
-                'r': color.red,
-                'g': color.green,
-                'b': color.blue,
+                'r': ((color.r * 255.0).round() & 0xff),
+                'g': ((color.g * 255.0).round() & 0xff),
+                'b': ((color.b * 255.0).round() & 0xff),
               }));
     } on PlatformException catch (e) {
       printERROR("Failed to set title bar color: ${e.message}");
@@ -350,10 +336,11 @@ class ThemeController extends GetxController {
 extension ComplementaryColor on Color {
   Color get complementaryColor => getComplementaryColor(this);
   Color getComplementaryColor(Color color) {
-    int r = 255 - color.red;
-    int g = 255 - color.green;
-    int b = 255 - color.blue;
-    return Color.fromARGB(color.alpha, r, g, b);
+    final a = ((color.a * 255.0).round() & 0xff);
+    final r = 255 - ((color.r * 255.0).round() & 0xff);
+    final g = 255 - ((color.g * 255.0).round() & 0xff);
+    final b = 255 - ((color.b * 255.0).round() & 0xff);
+    return Color.fromARGB(a, r, g, b);
   }
 }
 
@@ -383,11 +370,18 @@ extension HexColor on Color {
   }
 
   /// Prefixes a hash sign if [leadingHashSign] is set to `true` (default is `true`).
-  String toHex({bool leadingHashSign = true}) => '${leadingHashSign ? '#' : ''}'
-      '${alpha.toRadixString(16).padLeft(2, '0')}'
-      '${red.toRadixString(16).padLeft(2, '0')}'
-      '${green.toRadixString(16).padLeft(2, '0')}'
-      '${blue.toRadixString(16).padLeft(2, '0')}';
+  String toHex({bool leadingHashSign = true}) {
+    final argb = toARGB32();
+    final a = (argb >> 24) & 0xff;
+    final r = (argb >> 16) & 0xff;
+    final g = (argb >> 8) & 0xff;
+    final b = argb & 0xff;
+    return '${leadingHashSign ? '#' : ''}'
+        '${a.toRadixString(16).padLeft(2, '0')}'
+        '${r.toRadixString(16).padLeft(2, '0')}'
+        '${g.toRadixString(16).padLeft(2, '0')}'
+        '${b.toRadixString(16).padLeft(2, '0')}';
+  }
 }
 
 enum ThemeType {

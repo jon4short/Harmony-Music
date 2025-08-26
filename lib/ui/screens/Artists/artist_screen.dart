@@ -276,7 +276,10 @@ class AboutArtist extends StatelessWidget {
                       padding: const EdgeInsets.only(top: 10, bottom: 10),
                       child: Text(
                         artistScreenController.artist_.name,
-                        style: Theme.of(context).textTheme.titleLarge,
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              color: Theme.of(context).colorScheme.onSurface,
+                              fontWeight: FontWeight.w600,
+                            ),
                       ),
                     ),
                     (artistData.containsKey("description") &&

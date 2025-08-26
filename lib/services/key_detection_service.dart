@@ -4,7 +4,6 @@ import 'dart:typed_data';
 
 import 'package:ffmpeg_kit_flutter_new_https/ffmpeg_kit.dart';
 import 'package:hive/hive.dart';
-import 'package:get/get.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '/utils/helper.dart';
@@ -72,7 +71,6 @@ class KeyDetectionService {
       _cancelRequested = false;
       final tmpDir = await getTemporaryDirectory();
       final double totalSec = totalDuration.inSeconds.toDouble();
-      final bool shortTrack = totalSec < 60.0;
 
       // Resolve to the same direct HTTPS stream URL the app uses, if given a YT ID/URL.
       final String sourceUrl = await _resolvePlayableUrl(urlOrPath);
@@ -149,17 +147,19 @@ class KeyDetectionService {
       ];
 
       // Debug: print top-3 peaks in full and bass chroma
-      List<int> _topK(List<double> v, int k) {
+      List<int> topK(List<double> v, int k) {
         final idx = List<int>.generate(12, (i) => i);
         idx.sort((a, b) => v[b].compareTo(v[a]));
         return idx.take(k).toList();
       }
-      final topFull = _topK(prob, 3);
-      final topBass = _topK(bassProb, 3);
-      printINFO('Chroma peaks (full): ' +
-          topFull.map((i) => '${_notes[i]}=${prob[i].toStringAsFixed(2)}').join(', '));
-      printINFO('Chroma peaks (bass): ' +
-          topBass.map((i) => '${_notes[i]}=${bassProb[i].toStringAsFixed(2)}').join(', '));
+      final topFull = topK(prob, 3);
+      final topBass = topK(bassProb, 3);
+      printINFO('Chroma peaks (full): ${
+          topFull.map((i) => '${_notes[i]}=${prob[i].toStringAsFixed(2)}').join(', ')
+        }');
+      printINFO('Chroma peaks (bass): ${
+          topBass.map((i) => '${_notes[i]}=${bassProb[i].toStringAsFixed(2)}').join(', ')
+        }');
 
       // Determine best key across Major, Minor, and Mixolydian, allowing rotations
       final major = _bestKey(avg, prob, bassProb, _majorProfile, isMinor: false, debug: true, modeName: 'Major'); // (idx, score, name)
@@ -363,7 +363,7 @@ class KeyDetectionService {
       final summary = top
           .map((e) => '${_notes[e.$1]}=${((e.$2 - minScore) / denom).clamp(0.0, 1.0).toStringAsFixed(2)}')
           .join(', ');
-      printINFO('Top ${modeName.isEmpty ? '' : modeName + ' '}candidates: $summary');
+      printINFO('Top ${modeName.isEmpty ? '' : '$modeName '}candidates: $summary');
     }
     final name = isMinor ? '${_notes[bestIdx]} minor' : _notes[bestIdx];
     // Relative confidence vs other candidates

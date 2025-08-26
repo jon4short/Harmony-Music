@@ -45,8 +45,13 @@ class ArtistScreenBN extends StatelessWidget {
             () => artistScreenController.isArtistContentFetced.isTrue
                 ? Padding(
                     padding: const EdgeInsets.only(top: 25.0),
-                    child: Text(artistScreenController.artist_.name,
-                        style: Theme.of(context).textTheme.titleLarge),
+                    child: Text(
+                      artistScreenController.artist_.name,
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            color: Theme.of(context).colorScheme.onSurface,
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
                   )
                 : const SizedBox.shrink(),
           )),

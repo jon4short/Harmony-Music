@@ -97,15 +97,40 @@ class SearchResultScreenController extends GetxController
     if (args != null) {
       queryString.value = args;
       resultContent.value = await musicServices.search(args);
-      final allKeys = resultContent.keys.where((element) => ([
-            "Songs",
-            "Videos",
-            "Albums",
-            "Featured playlists",
-            "Community playlists",
-            "Artists"
-          ]).contains(element));
-      railItems.value = List<String>.from(allKeys);
+      // Normalize API-provided category keys to canonical tab names
+      final Map<String, String> canonicalMap = {
+        'songs': 'Songs',
+        'videos': 'Videos',
+        'albums': 'Albums',
+        'artists': 'Artists',
+        'community playlists': 'Community playlists',
+        'community_playlists': 'Community playlists',
+        'featured playlists': 'Featured playlists',
+        'featured_playlists': 'Featured playlists',
+      };
+
+      final seen = <String>{};
+      final List<String> mappedKeys = [];
+      for (final String key in resultContent.keys) {
+        final lk = key.toLowerCase();
+        final canonical = canonicalMap[lk];
+        if (canonical != null && !seen.contains(canonical)) {
+          mappedKeys.add(canonical);
+          seen.add(canonical);
+        }
+      }
+
+      // Preserve a stable order
+      const desiredOrder = [
+        'Songs',
+        'Videos',
+        'Albums',
+        'Featured playlists',
+        'Community playlists',
+        'Artists',
+      ];
+      mappedKeys.sort((a, b) => desiredOrder.indexOf(a).compareTo(desiredOrder.indexOf(b)));
+      railItems.value = mappedKeys;
       final len =
           railItems.where((element) => element.contains("playlists")).length;
       final calH = 30 + (railItems.length + 1 - len) * 123 + len * 150.0;

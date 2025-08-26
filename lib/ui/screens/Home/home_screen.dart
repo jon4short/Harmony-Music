@@ -13,6 +13,7 @@ import '/ui/player/player_controller.dart';
 import '/ui/widgets/create_playlist_dialog.dart';
 import '../../navigator.dart';
 import '../../widgets/content_list_widget.dart';
+import '../../widgets/artist_carousel_widget.dart';
 import '../../widgets/quickpickswidget.dart';
 import '../../widgets/shimmer_widgets/home_shimmer.dart';
 import 'home_screen_controller.dart';
@@ -207,6 +208,24 @@ class Body extends StatelessWidget {
                                           homeScreenController.quickPicks.value,
                                       scrollController: scrollController);
                                 }),
+                                Obx(() {
+                                  final fresh = homeScreenController.freshNewMusic.value;
+                                  if (fresh == null) return const SizedBox.shrink();
+                                  final sc = ScrollController();
+                                  homeScreenController.contentScrollControllers.add(sc);
+                                  return QuickPicksWidget(
+                                    content: fresh,
+                                    scrollController: sc,
+                                  );
+                                }),
+                                Obx(() => homeScreenController
+                                        .christianArtists.isNotEmpty
+                                    ? ArtistCarouselWidget(
+                                        title: 'Christian Artists',
+                                        artists: homeScreenController
+                                            .christianArtists,
+                                      )
+                                    : const SizedBox.shrink()),
                                 ...getWidgetList(
                                     homeScreenController.middleContent,
                                     homeScreenController),

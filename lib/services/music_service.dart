@@ -622,25 +622,25 @@ class MusicServices extends getx.GetxService {
         continue;
       }
 
-      if (category != null) {
-        searchResults[category] = parseSearchResults(
-            results, ['artist', 'playlist', 'song', 'video', 'station'], type, category);
-      }
+      // At this point, `category` is guaranteed non-null due to the check above.
+      final cat = category;
+      searchResults[cat] = parseSearchResults(
+          results, ['artist', 'playlist', 'song', 'video', 'station'], type, cat);
 
       if (filter != null) {
         requestFunc(additionalParams) async =>
             (await _sendRequest("search", data,
                     additionalParams: additionalParams))
                 .data;
-        // Note: category is guaranteed non-null in the guarded block below
+        // `cat` already promoted above
         parseFunc(contents) => parseSearchResults(contents,
-            ['artist', 'playlist', 'song', 'video', 'station'], type, category!);
+            ['artist', 'playlist', 'song', 'video', 'station'], type, cat);
 
-        if (category != null && searchResults.containsKey(category)) {
+        if (searchResults.containsKey(cat)) {
           final x = await getContinuations(
               res['musicShelfRenderer'],
               'musicShelfContinuation',
-              limit - ((searchResults[category] as List).length),
+              limit - ((searchResults[cat] as List).length),
               requestFunc,
               parseFunc,
               isAdditionparamReturnReq: true);
@@ -648,12 +648,12 @@ class MusicServices extends getx.GetxService {
           searchResults["params"] = {
             'data': data,
             "type": type,
-            "category": category,
+            "category": cat,
             'additionalParams': x[1],
           };
 
-          searchResults[category] = [
-            ...(searchResults[category] as List),
+          searchResults[cat] = [
+            ...(searchResults[cat] as List),
             ...(x[0])
           ];
         }

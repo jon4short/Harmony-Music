@@ -202,7 +202,7 @@ class MiniPlayer extends StatelessWidget {
                                                       .textTheme
                                                       .titleLarge!
                                                       .color!
-                                                      .withOpacity(0.2),
+                                                      .withValues(alpha: 0.2),
                                             ))),
                                   ],
                                 ),
@@ -273,7 +273,7 @@ class MiniPlayer extends StatelessWidget {
                                                 .textTheme
                                                 .titleLarge!
                                                 .color!
-                                                .withOpacity(0.2)
+                                                .withValues(alpha: 0.2)
                                             : Theme.of(context)
                                                 .textTheme
                                                 .titleMedium!
@@ -301,7 +301,7 @@ class MiniPlayer extends StatelessWidget {
                                                   .textTheme
                                                   .titleLarge!
                                                   .color!
-                                                  .withOpacity(0.2),
+                                                  .withValues(alpha: 0.2),
                                         )),
                                     IconButton(
                                         iconSize: 20,

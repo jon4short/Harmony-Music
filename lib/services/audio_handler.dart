@@ -59,8 +59,6 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
   bool queueLoopModeEnabled = false;
   bool shuffleModeEnabled = false;
   bool loudnessNormalizationEnabled = false;
-  // Pitch (UI-only for now). Stored for future Android DSP integration.
-  int _pitchSemitones = 0;
   // var networkErrorPause = false;
   bool isSongLoading = true;
 
@@ -302,10 +300,9 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
   }
 
   @override
-  // ignore: avoid_renaming_method_parameters
-  Future<void> removeQueueItem(MediaItem mediaItem_) async {
+  Future<void> removeQueueItem(MediaItem mediaItem) async {
     if (shuffleModeEnabled) {
-      final id = mediaItem_.id;
+      final id = mediaItem.id;
       final itemIndex = shuffledQueue.indexOf(id);
       if (currentShuffleIndex > itemIndex) {
         currentShuffleIndex -= 1;
@@ -314,14 +311,14 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
     }
 
     final currentQueue = queue.value;
-    final currentSong = mediaItem.value;
-    final itemIndex = currentQueue.indexOf(mediaItem_);
+    final currentSong = this.mediaItem.value;
+    final itemIndex = currentQueue.indexOf(mediaItem);
     if (currentIndex > itemIndex) {
       currentIndex -= 1;
     }
-    currentQueue.remove(mediaItem_);
+    currentQueue.remove(mediaItem);
     queue.add(currentQueue);
-    mediaItem.add(currentSong);
+    this.mediaItem.add(currentSong);
   }
 
   @override
@@ -667,12 +664,8 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
         break;
 
       case 'setPitch':
-        // UI-only stub. Value: int semitones (-6..6). No DSP applied yet.
-        try {
-          _pitchSemitones = (extras!['semitones'] as num).toInt();
-        } catch (_) {
-          // ignore malformed payloads
-        }
+        // UI-only stub on non-Android-MK: accept payload but no processing here.
+        // int semis = (extras?['semitones'] as num?)?.toInt() ?? 0; // intentionally unused
         break;
 
       case 'shuffleCmd':

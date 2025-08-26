@@ -9,6 +9,7 @@ import '../../../utils/update_check_flag_file.dart';
 import '../../../utils/helper.dart';
 import '/models/album.dart';
 import '/models/playlist.dart';
+import '/models/artist.dart';
 import '/models/quick_picks.dart';
 import '/services/music_service.dart';
 import '../Settings/settings_screen_controller.dart';
@@ -22,6 +23,8 @@ class HomeScreenController extends GetxController {
   final quickPicks = QuickPicks([]).obs;
   final middleContent = [].obs;
   final fixedContent = [].obs;
+  final christianArtists = <Artist>[].obs;
+  final Rxn<QuickPicks> freshNewMusic = Rxn<QuickPicks>();
   final showVersionDialog = true.obs;
   //isHomeScreenOnTop var only useful if bottom nav enabled
   final isHomeSreenOnTop = true.obs;
@@ -95,6 +98,9 @@ class HomeScreenController extends GetxController {
       final homeContentListMap = await _musicServices.getHome(
           limit:
               Get.find<SettingsScreenController>().noOfHomeScreenContent.value);
+      // Remove Tamil Hits section if present
+      homeContentListMap.removeWhere(
+          (element) => (element['title'] ?? '').toString().toLowerCase() == 'tamil hits');
       if (contentType == "TR") {
         final index = homeContentListMap
             .indexWhere((element) => element['title'] == "Trending");
@@ -140,12 +146,107 @@ class HomeScreenController extends GetxController {
         }
       }
 
-      if (quickPicks.value.songList.isEmpty) {
-        final index = homeContentListMap
-            .indexWhere((element) => element['title'] == "Quick picks");
-        final con = homeContentListMap.removeAt(index);
-        quickPicks.value = QuickPicks(List<MediaItem>.from(con["contents"]),
-            title: "Quick picks");
+      // Build Quick Picks highlighting Christian artists
+      try {
+        final christianSeedArtists = [
+          'Hillsong',
+          'Upper Room',
+          'Bethel Music',
+          'Kari Jobe',
+          'Chris Tomlin',
+        ];
+        final List<MediaItem> christianPicks = [];
+        for (final name in christianSeedArtists) {
+          final res = await _musicServices.search(name, filter: 'songs', limit: 5);
+          final songs = (res['Songs'] ?? []).whereType<MediaItem>().toList();
+          christianPicks.addAll(songs);
+          if (christianPicks.length >= 25) break;
+        }
+        if (christianPicks.isNotEmpty) {
+          quickPicks.value = QuickPicks(christianPicks.take(25).toList(), title: 'Quick Picks');
+        } else if (quickPicks.value.songList.isEmpty) {
+          final index = homeContentListMap
+              .indexWhere((element) => element['title'] == "Quick picks");
+          if (index != -1) {
+            final con = homeContentListMap.removeAt(index);
+            quickPicks.value = QuickPicks(List<MediaItem>.from(con["contents"]),
+                title: "Quick picks");
+          }
+        }
+      } catch (_) {
+        if (quickPicks.value.songList.isEmpty) {
+          final index = homeContentListMap
+              .indexWhere((element) => element['title'] == "Quick picks");
+          if (index != -1) {
+            final con = homeContentListMap.removeAt(index);
+            quickPicks.value = QuickPicks(List<MediaItem>.from(con["contents"]),
+                title: "Quick picks");
+          }
+        }
+      }
+
+      // Fetch curated Christian artists from provided list
+      try {
+        final seeds = <String>[
+          // Contemporary Christian & Worship
+          'Lauren Daigle', 'Chris Tomlin', 'Elevation Worship', 'MercyMe',
+          'TobyMac', 'Casting Crowns', 'Hillsong Worship', 'Kari Jobe',
+          'Tauren Wells',
+          // Traditional Gospel
+          'CeCe Winans', 'Kirk Franklin', 'Mahalia Jackson', 'Shirley Caesar',
+          'Andraé Crouch', 'Donnie McClurkin',
+          // Rock & Alternative
+          'Stryper', 'Skillet', 'Switchfoot', 'Audio Adrenaline',
+          // Folk & Indie
+          'John Mark Pantana', 'Elias Dummer', 'Jess Ray',
+        ];
+        final List<Artist> curated = [];
+        final seen = <String>{};
+        for (final name in seeds) {
+          final res = await _musicServices.search(name, filter: 'artists', limit: 3);
+          final candidates = (res['Artists'] ?? []).whereType<Artist>().toList();
+          if (candidates.isEmpty) continue;
+          // Pick best match by name contains, else first
+          Artist pick = candidates.first;
+          for (final a in candidates) {
+            if (a.name.toLowerCase().contains(name.toLowerCase())) {
+              pick = a;
+              break;
+            }
+          }
+          if (!seen.contains(pick.browseId)) {
+            curated.add(pick);
+            seen.add(pick.browseId);
+          }
+          if (curated.length >= 30) break;
+        }
+        christianArtists.value = curated;
+      } catch (_) {
+        christianArtists.clear();
+      }
+
+      // Build Fresh New Music: Christian songs released this year
+      try {
+        final currentYear = DateTime.now().year;
+        final res = await _musicServices.search('christian', filter: 'songs', limit: 60);
+        final List<MediaItem> songs = (res['Songs'] ?? []).whereType<MediaItem>().toList();
+        final fresh = songs.where((m) {
+          final y = m.extras?['year'];
+          if (y == null) return false;
+          if (y is int) return y == currentYear;
+          if (y is String) {
+            final parsed = int.tryParse(y);
+            return parsed == currentYear;
+          }
+          return false;
+        }).toList();
+        if (fresh.isNotEmpty) {
+          freshNewMusic.value = QuickPicks(fresh.take(25).toList(), title: 'Fresh New Music');
+        } else {
+          freshNewMusic.value = null;
+        }
+      } catch (_) {
+        freshNewMusic.value = null;
       }
 
       middleContent.value = _setContentList(middleContentTemp);

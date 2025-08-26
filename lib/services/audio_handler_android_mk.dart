@@ -68,21 +68,21 @@ class MyAudioHandlerAndroidMK extends BaseAudioHandler with GetxServiceMixin {
   }
 
   @override
-  Future<void> addQueueItem(MediaItem item) async {
-    final newQueue = List<MediaItem>.from(queue.value)..add(item);
+  Future<void> addQueueItem(MediaItem mediaItem) async {
+    final newQueue = List<MediaItem>.from(queue.value)..add(mediaItem);
     queue.add(newQueue);
   }
 
   @override
-  Future<void> addQueueItems(List<MediaItem> items) async {
-    final newQueue = List<MediaItem>.from(queue.value)..addAll(items);
+  Future<void> addQueueItems(List<MediaItem> mediaItems) async {
+    final newQueue = List<MediaItem>.from(queue.value)..addAll(mediaItems);
     queue.add(newQueue);
   }
 
   @override
-  Future<void> updateQueue(List<MediaItem> q) async {
-    final newQueue = List<MediaItem>.from(q);
-    queue.add(newQueue);
+  Future<void> updateQueue(List<MediaItem> queue) async {
+    final newQueue = List<MediaItem>.from(queue);
+    this.queue.add(newQueue);
   }
 
   @override
