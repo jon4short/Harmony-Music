@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import 'package:hive/hive.dart';
 
 import '../utils/helper.dart';
+import '/utils/logger.dart';
 
 class PipedServices extends GetxService {
   final Map<String, dynamic> _headers = {};
@@ -45,10 +46,11 @@ class PipedServices extends GetxService {
         return Res(0, errorMessage: response.data['error']);
       }
 
-      printINFO("Login successful! topken : ${data['token']}");
+      Logger.info("Login successful! topken : ${data['token']}");
       return Res(1, response: response.data);
     } on DioException catch (e) {
-      printERROR("Login Failed! => ${e.response?.statusMessage ?? e.message}");
+      Logger.error(
+          "Login Failed! => ${e.response?.statusMessage ?? e.message}");
       return Res(0, errorMessage: e.response?.statusMessage ?? e.message);
     }
   }
@@ -88,7 +90,7 @@ class PipedServices extends GetxService {
                     ),
             );
 
-      printINFO("Successful=> $endpoint");
+      Logger.info("Successful=> $endpoint");
 
       if (isInstanceListReq) {
         return Res(1,
@@ -104,7 +106,7 @@ class PipedServices extends GetxService {
         return Res(1, response: response.data);
       }
     } on DioException catch (e) {
-      printERROR("Error ! => ${e.response?.statusMessage ?? e.message}");
+      Logger.error("Error ! => ${e.response?.statusMessage ?? e.message}");
       return Res(0, errorMessage: e.response?.statusMessage ?? e.message);
     }
   }

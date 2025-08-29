@@ -51,21 +51,42 @@ class Player extends StatelessWidget {
                 playerController.queuePanelController.open();
               }
             },
-            child: Container(
-                color: Theme.of(context).primaryColor,
-                child: Column(
-                  children: [
-                    SizedBox(
-                      height: 65,
-                      child: Center(
-                          child: Icon(
-                        color: Theme.of(context).textTheme.titleMedium!.color,
-                        Icons.keyboard_arrow_up,
-                        size: 40,
-                      )),
+            child: ClipRRect(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Theme.of(context).primaryColor.withValues(alpha: 0.80),
+                        Theme.of(context).primaryColor.withValues(alpha: 0.75),
+                      ],
                     ),
-                  ],
-                )),
+                    border: Border(
+                      bottom: BorderSide(
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.08),
+                        width: 0.5,
+                      ),
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      SizedBox(
+                        height: 65,
+                        child: Center(
+                            child: Icon(
+                          color: Theme.of(context).textTheme.titleMedium!.color,
+                          Icons.keyboard_arrow_up,
+                          size: 40,
+                        )),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ),
 
           /// Panel for queue
@@ -88,17 +109,26 @@ class Player extends StatelessWidget {
                   alignment: Alignment.bottomCenter,
                   child: ClipRRect(
                     child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                      filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
                       child: Container(
                         padding: const EdgeInsets.only(
                             top: 15, bottom: 10, left: 10, right: 10),
                         decoration: BoxDecoration(
-                            boxShadow: const [
-                              BoxShadow(blurRadius: 5, color: Colors.black54)
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Theme.of(context).primaryColor.withValues(alpha: 0.90),
+                              Theme.of(context).primaryColor.withValues(alpha: 0.85),
                             ],
-                            color: Theme.of(context)
-                                .primaryColor
-                                .withValues(alpha: 0.5)),
+                          ),
+                          border: Border(
+                            top: BorderSide(
+                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.12),
+                              width: 0.5,
+                            ),
+                          ),
+                        ),
                         height: 60 + Get.mediaQuery.padding.bottom,
                         child: Align(
                           alignment: Alignment.topCenter,

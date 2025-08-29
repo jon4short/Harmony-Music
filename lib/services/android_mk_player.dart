@@ -1,16 +1,26 @@
 import 'dart:math';
-
+import 'package:get/get.dart';
 import 'package:media_kit/media_kit.dart';
+import 'media_kit_equalizer.dart';
 
 /// Minimal Android-only media_kit player wrapper to enable speed & pitch.
 /// Note: This is an initial integration. Background notifications &
 /// playback state streams are still managed by AudioService.
 class AndroidMKPlayer {
   // Enable independent pitch control (preserve tempo)
-  final Player _player = Player(configuration: const PlayerConfiguration(pitch: true));
+  final Player _player =
+      Player(configuration: const PlayerConfiguration(pitch: true));
+
+  // Expose player for state access in AudioHandler
+  Player get player => _player;
 
   Future<void> openUrl(String url) async {
     await _player.open(Media(url));
+
+    // Register player with equalizer service
+    if (Get.isRegistered<MediaKitEqualizer>()) {
+      Get.find<MediaKitEqualizer>().setPlayer(_player);
+    }
   }
 
   Future<void> play() => _player.play();

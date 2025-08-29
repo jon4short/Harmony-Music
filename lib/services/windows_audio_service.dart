@@ -1,5 +1,6 @@
 import 'package:get/get.dart';
-import 'package:harmonymusic/utils/helper.dart';
+import 'package:harmonic/utils/helper.dart';
+import '/utils/logger.dart';
 import 'package:smtc_windows/smtc_windows.dart';
 
 import '../ui/player/player_controller.dart';
@@ -41,7 +42,7 @@ class WindowsAudioService extends GetxService {
         }
       });
     } catch (e) {
-      printERROR("Error: $e");
+      Logger.error("Error: $e");
     }
 
     playerController.buttonState.listen((state) {

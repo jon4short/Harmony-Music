@@ -1,6 +1,7 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:dio/dio.dart';
-import 'package:harmonymusic/utils/helper.dart';
+import 'package:harmonic/utils/helper.dart';
+import '/utils/logger.dart';
 import 'package:hive/hive.dart';
 
 class SyncedLyricsService {
@@ -18,7 +19,7 @@ class SyncedLyricsService {
     try {
       final response = (await Dio().get(url)).data;
       if (response["syncedLyrics"] != null) {
-        printINFO("Synced Available");
+        Logger.info("Synced Available");
         final lyricsData = {
           "synced": response["syncedLyrics"],
           "plainLyrics": response["plainLyrics"]
@@ -27,7 +28,7 @@ class SyncedLyricsService {
         return lyricsData;
       }
     } on DioException catch (e) {
-      printERROR(e.response);
+      Logger.error('$e', 'SyncedLyrics', e.response);
     } finally {
       await lyricsBox.close();
     }

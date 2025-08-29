@@ -8,6 +8,7 @@ import 'package:hive/hive.dart';
 import '/models/album.dart';
 import '/services/utils.dart';
 import '../utils/helper.dart';
+import '/utils/logger.dart';
 import 'constant.dart';
 import 'continuations.dart';
 import 'nav_parser.dart';
@@ -66,7 +67,7 @@ class MusicServices extends getx.GetxService {
           'id': visitorData['id'],
           'exp': DateTime.now().millisecondsSinceEpoch ~/ 1000 + 2590200
         });
-        printINFO("Got Visitor id ($visitorData['id']) from Box");
+        Logger.info("Got Visitor id ($visitorData['id']) from Box");
         return;
       }
     }
@@ -74,7 +75,7 @@ class MusicServices extends getx.GetxService {
     final visitorId = await genrateVisitorId();
     if (visitorId != null) {
       _headers['X-Goog-Visitor-Id'] = visitorId;
-      printINFO("New Visitor id generated ($visitorId)");
+      Logger.info("New Visitor id generated ($visitorId)");
       appPrefsBox.put("visitorId", {
         'id': visitorId,
         'exp': DateTime.now().millisecondsSinceEpoch ~/ 1000 + 2592000
@@ -124,7 +125,7 @@ class MusicServices extends getx.GetxService {
         return _sendRequest(action, data, additionalParams: additionalParams);
       }
     } on DioException catch (e) {
-      printINFO("Error $e");
+      Logger.info("Error $e");
       throw NetworkError();
     }
   }
@@ -624,8 +625,8 @@ class MusicServices extends getx.GetxService {
 
       // At this point, `category` is guaranteed non-null due to the check above.
       final cat = category;
-      searchResults[cat] = parseSearchResults(
-          results, ['artist', 'playlist', 'song', 'video', 'station'], type, cat);
+      searchResults[cat] = parseSearchResults(results,
+          ['artist', 'playlist', 'song', 'video', 'station'], type, cat);
 
       if (filter != null) {
         requestFunc(additionalParams) async =>
@@ -652,10 +653,7 @@ class MusicServices extends getx.GetxService {
             'additionalParams': x[1],
           };
 
-          searchResults[cat] = [
-            ...(searchResults[cat] as List),
-            ...(x[0])
-          ];
+          searchResults[cat] = [...(searchResults[cat] as List), ...(x[0])];
         }
       }
     }

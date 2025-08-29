@@ -7,6 +7,7 @@ import 'package:get/get.dart';
 import '/ui/screens/Home/home_screen_controller.dart';
 import '/ui/screens/Settings/settings_screen_controller.dart';
 import '../utils/helper.dart';
+import '/utils/logger.dart';
 import '../ui/navigator.dart';
 import '../ui/player/player.dart';
 import 'player/components/mini_player.dart';
@@ -22,7 +23,7 @@ class Home extends StatelessWidget {
   static const routeName = '/appHome';
   @override
   Widget build(BuildContext context) {
-    printINFO("Home");
+    Logger.info("Home");
     final PlayerController playerController = Get.find<PlayerController>();
     final settingsScreenController = Get.find<SettingsScreenController>();
     final homeScreenController = Get.find<HomeScreenController>();
@@ -52,12 +53,72 @@ class Home extends StatelessWidget {
               settingsScreenController.isBottomNavBarEnabled.isTrue
                   ? homeScreenController.onBottonBarTabSelected(0)
                   : homeScreenController.onSideBarTabSelected(0);
-            } else if (playerController.buttonState.value ==
-                PlayButtonState.playing) {
-              SystemNavigator.pop();
             } else {
-              await Get.find<AudioHandler>().customAction("saveSession");
-              exit(0);
+              // Always save session data first
+              try {
+                await Get.find<AudioHandler>().customAction("saveSession");
+              } catch (e) {
+                Logger.error('Error saving session during app close: $e');
+              }
+
+              // Check current playback state and user preferences
+              final isPlaying =
+                  playerController.buttonState.value == PlayButtonState.playing;
+              final backgroundPlayEnabled =
+                  settingsScreenController.backgroundPlayEnabled.value;
+              final stopOnSwipeAway =
+                  settingsScreenController.stopPlyabackOnSwipeAway.value;
+
+              Logger.info(
+                  'App closing - isPlaying: $isPlaying, backgroundPlay: $backgroundPlayEnabled, stopOnSwipe: $stopOnSwipeAway');
+
+              if (stopOnSwipeAway) {
+                // User explicitly wants app to close and stop playback
+                try {
+                  Logger.info(
+                      'Stopping playback and terminating app due to user setting');
+                  await Get.find<AudioHandler>().stop();
+                  await Get.find<AudioHandler>().customAction("dispose");
+                } catch (e) {
+                  Logger.error(
+                      'Error stopping audio service during app close: $e');
+                  // Force close even if audio service fails
+                  try {
+                    await SystemNavigator.pop();
+                  } catch (e2) {
+                    exit(0);
+                  }
+                }
+                return; // dispose action will handle termination
+              } else if (isPlaying && backgroundPlayEnabled) {
+                // Music is playing and background play is enabled - continue in background
+                Logger.info('Continuing playback in background');
+                try {
+                  await SystemNavigator.pop();
+                } catch (e) {
+                  Logger.error('SystemNavigator.pop failed: $e');
+                  exit(0);
+                }
+              } else if (isPlaying && !backgroundPlayEnabled) {
+                // Music is playing but background play is disabled - pause and close
+                try {
+                  await Get.find<AudioHandler>().pause();
+                  Logger.info(
+                      'Paused playback due to background play disabled');
+                  await SystemNavigator.pop();
+                } catch (e) {
+                  Logger.error('Error during pause and close: $e');
+                  exit(0);
+                }
+              } else {
+                // No music playing - safe to close normally
+                try {
+                  await SystemNavigator.pop();
+                } catch (e) {
+                  Logger.error('SystemNavigator.pop failed, using exit(0): $e');
+                  exit(0);
+                }
+              }
             }
           }
         }
@@ -134,8 +195,8 @@ class Home extends StatelessWidget {
                                                           .isQueueLoopModeEnabled
                                                           .isFalse
                                                       ? Colors.white24
-                                                      : Colors.white
-                                                          .withValues(alpha: 0.8),
+                                                      : Colors.white.withValues(
+                                                          alpha: 0.8),
                                                   borderRadius:
                                                       BorderRadius.circular(20),
                                                 ),

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:ui' as ui;
 import 'package:get/get.dart';
-import 'package:harmonymusic/ui/player/player_controller.dart';
+import 'package:harmonic/ui/player/player_controller.dart';
 import 'package:widget_marquee/widget_marquee.dart';
 
 import 'image_widget.dart';
@@ -23,16 +23,32 @@ class UpNextQueue extends StatelessWidget {
     final playerController = Get.find<PlayerController>();
     return Stack(
       children: [
-        // Smokey glass backdrop
+        // OneUI 7 style uniform blurred backdrop matching player background
         Positioned.fill(
-          child: BackdropFilter(
-            filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: const SizedBox.shrink(),
-          ),
-        ),
-        Positioned.fill(
-          child: Container(
-            color: Colors.black.withValues(alpha: 0.35),
+          child: ClipRRect(
+            child: BackdropFilter(
+              filter: ui.ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Theme.of(context).primaryColor.withValues(alpha: 0.85),
+                      Theme.of(context).primaryColor.withValues(alpha: 0.80),
+                      Theme.of(context).primaryColor.withValues(alpha: 0.75),
+                    ],
+                    stops: const [0.0, 0.5, 1.0],
+                  ),
+                  border: Border(
+                    top: BorderSide(
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.1),
+                      width: 0.5,
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ),
         ),
         Obx(() {
@@ -97,8 +113,8 @@ class UpNextQueue extends StatelessWidget {
                           left: GetPlatform.isAndroid ? 30 : 0,
                           right: 25),
                       tileColor: playerController.currentSongIndex.value == index
-                          ? Colors.grey.shade800.withValues(alpha: 0.2)
-                          : Colors.grey.shade800.withValues(alpha: 0.1),
+                          ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.08)
+                          : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.02),
                       leading: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [

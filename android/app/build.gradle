@@ -29,10 +29,18 @@ android {
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
+        // Suppress obsolete Java version warnings
+        kotlinOptions.freeCompilerArgs += ["-Xlint:-options"]
     }
 
     kotlinOptions {
         jvmTarget = '17'
+        freeCompilerArgs += ["-Xlint:-options"]
+    }
+    
+    // Suppress Java compilation warnings globally
+    tasks.withType(JavaCompile) {
+        options.compilerArgs += ["-Xlint:-options"]
     }
 
     sourceSets {
@@ -41,23 +49,79 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId "com.anandnet.harmonymusic"
+        applicationId "com.jon4short.harmonic"
         // You can update the following values to match your application needs.
         // For more information, see: https://docs.flutter.dev/deployment/android#reviewing-the-gradle-build-configuration.
         minSdkVersion flutter.minSdkVersion
         targetSdkVersion flutter.targetSdkVersion
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
+        
+        // Enable multidex for large apps
+        multiDexEnabled true
+        
+        // Additional crash prevention and compatibility
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        vectorDrawables.useSupportLibrary = true
     }
+
+    // Architecture splitting handled by Flutter's --split-per-abi flag
+    // splits {
+    //     abi {
+    //         enable true
+    //         reset()
+    //         include 'arm64-v8a', 'armeabi-v7a', 'x86_64'
+    //         universalApk true // Also build universal APK to avoid conflicts
+    //     }
+    // }
+
+    // Configure version codes for architecture-specific APKs (handled by --split-per-abi)
+    // This ensures proper Play Store ordering
+    // project.ext.abiCodes = [
+    //     'armeabi-v7a': 1,
+    //     'arm64-v8a': 2,
+    //     'x86_64': 3
+    // ]
+
+    // Generate unique version codes for each architecture (handled by --split-per-abi)
+    // android.applicationVariants.all { variant ->
+    //     variant.outputs.each { output ->
+    //         def abiVersionCode = project.ext.abiCodes.get(output.getFilter(com.android.build.OutputFile.ABI))
+    //         if (abiVersionCode != null) {
+    //             output.versionCodeOverride = abiVersionCode * 1000 + variant.versionCode
+    //         }
+    //     }
+    // }
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
+            // Safe release configuration to prevent native crashes
+            minifyEnabled false
+            shrinkResources false
+            debuggable false  // Release should not be debuggable
+            jniDebuggable false
+            
+            // Use release signing but be safer with native libraries
             signingConfig signingConfigs.debug
+            
+            // Disable ProGuard completely to avoid any obfuscation issues
+            // proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            minifyEnabled false
+            shrinkResources false
+            debuggable true
+            jniDebuggable true
         }
     }
-    namespace 'com.anandnet.harmonymusic'
+    
+    // Prevent native library conflicts that cause crashes
+    packagingOptions {
+        pickFirst '**/libc++_shared.so'
+        pickFirst '**/libjsc.so'
+        pickFirst '**/libflutter.so'
+    }
+    namespace 'com.jon4short.harmonic'
 }
 
 flutter {

@@ -10,6 +10,8 @@ import '/ui/screens/Search/search_screen_controller.dart';
 import '/utils/get_localization.dart';
 import '/services/downloader.dart';
 import '/services/piped_service.dart';
+import '/services/media_kit_equalizer.dart';
+import 'ui/screens/Equalizer/equalizer_screen.dart';
 import 'utils/app_link_controller.dart';
 import '/services/audio_handler.dart';
 import '/services/music_service.dart';
@@ -21,6 +23,7 @@ import 'ui/screens/Home/home_screen_controller.dart';
 import 'ui/screens/Library/library_controller.dart';
 import 'utils/system_tray.dart';
 import 'utils/update_check_flag_file.dart';
+import '/utils/logger.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -50,6 +53,12 @@ class MyApp extends StatelessWidget {
         locale:
             Locale(Hive.box("AppPrefs").get('currentAppLanguageCode') ?? "en"),
         fallbackLocale: const Locale("en"),
+        getPages: [
+          GetPage(
+            name: '/equalizer',
+            page: () => const EqualizerScreen(),
+          ),
+        ],
         builder: (context, child) {
           final mQuery = MediaQuery.of(context);
           final scale =
@@ -93,6 +102,7 @@ Future<void> startApplicationServices() async {
   Get.lazyPut(() => LibraryArtistsController(), fenix: true);
   Get.lazyPut(() => SettingsScreenController(), fenix: true);
   Get.lazyPut(() => Downloader(), fenix: true);
+  Get.lazyPut(() => MediaKitEqualizer(), fenix: true);
   if (GetPlatform.isDesktop) {
     Get.lazyPut(() => SearchScreenController(), fenix: true);
     Get.put(DesktopSystemTray());
@@ -134,10 +144,38 @@ void _setAppInitPrefs() {
 class LifecycleHandler extends WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) async {
-    if (state == AppLifecycleState.resumed) {
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    } else if (state == AppLifecycleState.detached) {
-      await Get.find<AudioHandler>().customAction("saveSession");
+    final settingsController = Get.find<SettingsScreenController>();
+    final playerController = Get.find<PlayerController>();
+
+    Logger.info('App lifecycle state changed to: $state');
+
+    switch (state) {
+      case AppLifecycleState.resumed:
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+        break;
+      case AppLifecycleState.paused:
+        // App is in background but not closed
+        if (!settingsController.backgroundPlayEnabled.value &&
+            playerController.buttonState.value == PlayButtonState.playing) {
+          await Get.find<AudioHandler>().pause();
+        }
+        break;
+      case AppLifecycleState.inactive:
+        // App is inactive (e.g., during phone call)
+        break;
+      case AppLifecycleState.detached:
+        // App is being terminated
+        Logger.info('App is being terminated - saving session');
+        await Get.find<AudioHandler>().customAction("saveSession");
+
+        // Force stop if background play is disabled
+        if (!settingsController.backgroundPlayEnabled.value) {
+          await Get.find<AudioHandler>().stop();
+        }
+        break;
+      case AppLifecycleState.hidden:
+        // App is hidden but still running
+        break;
     }
   }
 }

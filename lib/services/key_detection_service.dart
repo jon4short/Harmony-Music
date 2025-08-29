@@ -5,9 +5,13 @@ import 'dart:typed_data';
 import 'package:ffmpeg_kit_flutter_new_https/ffmpeg_kit.dart';
 import 'package:hive/hive.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:get/get.dart';
 
 import '/utils/helper.dart';
+import '/utils/logger.dart';
 import '/services/stream_service.dart';
+import '/services/audioflux_service.dart';
+import '/ui/screens/Settings/settings_screen_controller.dart';
 
 class KeyDetectionResult {
   final String key; // e.g., "C", "G#", "A minor"
@@ -26,19 +30,107 @@ class KeyDetectionService {
   // Cancellation flag for in-flight detections
   static bool _cancelRequested = false;
   // Per-segment analysis length (seconds)
-  static const double _segmentLengthSec = 10.0;
+  static const double _segmentLengthSec = 30.0;
+  // AudioFlux initialization state
+  static bool _audioFluxInitialized = false;
+
+  /// Initialize AudioFlux if enabled and available
+  static Future<void> _initializeAudioFluxIfNeeded() async {
+    if (_audioFluxInitialized) {
+      Logger.info(
+          'KeyDetection: AudioFlux already initialized (available: ${AudioFluxService.isAvailable})');
+      return;
+    }
+
+    Logger.info('KeyDetection: Checking AudioFlux initialization...');
+
+    try {
+      final settingsController = Get.find<SettingsScreenController>();
+      final isEnabled = settingsController.audioFluxKeyDetectionEnabled.value;
+      Logger.info('KeyDetection: AudioFlux enabled in settings: $isEnabled');
+
+      if (isEnabled) {
+        Logger.info('KeyDetection: Initializing AudioFlux...');
+        final success = await AudioFluxService.initialize();
+        if (success) {
+          Logger.info(
+              'KeyDetection: AudioFlux backend initialized successfully');
+        } else {
+          Logger.info(
+              'KeyDetection: AudioFlux initialization failed, using fallback');
+        }
+      } else {
+        Logger.info(
+            'KeyDetection: AudioFlux disabled in settings, using built-in backend');
+      }
+    } catch (e) {
+      Logger.info('KeyDetection: Failed to access settings for AudioFlux: $e');
+    }
+
+    _audioFluxInitialized = true;
+  }
+
+  /// Check if AudioFlux should be used for key detection
+  static bool _shouldUseAudioFlux() {
+    try {
+      final settingsController = Get.find<SettingsScreenController>();
+      final isEnabled = settingsController.audioFluxKeyDetectionEnabled.value;
+      final isAvailable = AudioFluxService.isAvailable;
+
+      Logger.info(
+          'KeyDetection: AudioFlux enabled: $isEnabled, available: $isAvailable');
+
+      return isEnabled && isAvailable;
+    } catch (e) {
+      Logger.info('KeyDetection: Error checking AudioFlux availability: $e');
+      return false; // Default to fallback if settings unavailable
+    }
+  }
 
   // 12-TET pitch class labels
   static const List<String> _notes = [
-    'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'
+    'C',
+    'C#',
+    'D',
+    'D#',
+    'E',
+    'F',
+    'F#',
+    'G',
+    'G#',
+    'A',
+    'A#',
+    'B'
   ];
 
   // Krumhansl-Schmuckler key profiles (normalized rough values)
   static const List<double> _majorProfile = [
-    6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88
+    6.35,
+    2.23,
+    3.48,
+    2.33,
+    4.38,
+    4.09,
+    2.52,
+    5.19,
+    2.39,
+    3.66,
+    2.29,
+    2.88
   ];
   static const List<double> _minorProfile = [
-    6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17
+    6.33,
+    2.68,
+    3.52,
+    5.38,
+    2.60,
+    3.53,
+    2.54,
+    4.75,
+    3.98,
+    2.69,
+    3.34,
+    3.17
   ];
 
   // Approximate Mixolydian profile (heuristic):
@@ -67,6 +159,9 @@ class KeyDetectionService {
     String? mediaId,
   }) async {
     try {
+      // Initialize AudioFlux if needed
+      await _initializeAudioFluxIfNeeded();
+
       // reset cancellation for this run
       _cancelRequested = false;
       final tmpDir = await getTemporaryDirectory();
@@ -79,12 +174,250 @@ class KeyDetectionService {
       if (mediaId != null) {
         final override = await getOverride(mediaId);
         if (override != null && override.isNotEmpty) {
-          printINFO('Using manual key override for $mediaId: $override');
+          Logger.info('Using manual key override for $mediaId: $override');
           return KeyDetectionResult(override, 1.0);
         }
       }
 
-      // Build 3 x 10s segments centered around ~47.5s, with +/- 20s offsets to capture context.
+      // Try AudioFlux first if enabled and available
+      if (_shouldUseAudioFlux()) {
+        Logger.info(
+            'KeyDetection: AudioFlux enabled and available, trying AudioFlux backend');
+        final audioFluxResult = await _detectKeyWithAudioFlux(
+          sourceUrl,
+          totalSec,
+          tmpDir,
+          mediaId,
+        );
+        if (audioFluxResult != null) {
+          Logger.info(
+              'KeyDetection: AudioFlux succeeded with ${audioFluxResult.key} (conf=${audioFluxResult.confidence.toStringAsFixed(2)})');
+          return audioFluxResult;
+        }
+        // If AudioFlux fails, fall back to original method
+        Logger.info(
+            'KeyDetection: AudioFlux failed, falling back to built-in detection');
+      } else {
+        Logger.info(
+            'KeyDetection: AudioFlux not available, using built-in backend');
+      }
+
+      // Use original detection method as fallback
+      Logger.info('KeyDetection: Using built-in backend');
+      final builtInResult = await _detectKeyWithBuiltIn(
+        sourceUrl,
+        totalSec,
+        tmpDir,
+        mediaId,
+      );
+
+      if (builtInResult != null) {
+        Logger.info(
+            'KeyDetection: Built-in detection succeeded with ${builtInResult.key} (conf=${builtInResult.confidence.toStringAsFixed(2)})');
+      } else {
+        Logger.info('KeyDetection: Built-in detection also failed');
+      }
+
+      return builtInResult;
+    } catch (e) {
+      Logger.info('Key detection failed: $e');
+      return null;
+    }
+  }
+
+  /// AudioFlux-based key detection method
+  static Future<KeyDetectionResult?> _detectKeyWithAudioFlux(
+    String sourceUrl,
+    double totalSec,
+    Directory tmpDir,
+    String? mediaId,
+  ) async {
+    try {
+      // Get the multi-segment setting
+      final settingsController = Get.find<SettingsScreenController>();
+      final useMultiSegment =
+          settingsController.multiSegmentKeyDetectionEnabled.value;
+
+      if (useMultiSegment) {
+        // Multi-segment approach - extract 3 segments
+        Logger.info('AudioFlux: Using multi-segment analysis');
+        final segments = <double>[];
+
+        // Add multiple anchor points for robustness
+        final anchor1 = min(47.5, totalSec * 0.4); // Earlier in song
+        final anchor2 = min(75.0, totalSec * 0.6); // Middle-later
+        final anchor3 = min(30.0, totalSec * 0.25); // Early
+
+        segments.addAll([
+          max(0.0, anchor1 - (_segmentLengthSec * 0.5)),
+          max(0.0, anchor2 - (_segmentLengthSec * 0.5)),
+          max(0.0, anchor3 - (_segmentLengthSec * 0.5)),
+        ]);
+
+        // Remove duplicates and segments that would exceed track length
+        final validSegments = segments
+            .where((s) => s + _segmentLengthSec <= totalSec)
+            .toSet()
+            .toList();
+
+        KeyDetectionResult? bestResult;
+        double bestConfidence = 0.0;
+
+        for (int i = 0; i < validSegments.length && i < 2; i++) {
+          // Limit to 2 attempts
+          if (_cancelRequested) break;
+
+          final start = validSegments[i];
+          final outPath =
+              '${tmpDir.path}/hm_audioflux_${DateTime.now().millisecondsSinceEpoch}_$i.wav';
+
+          Logger.info(
+              'AudioFlux: Extracting segment $i at ${start.toStringAsFixed(2)}s for ${_segmentLengthSec.toStringAsFixed(1)}s');
+
+          final ok =
+              await _extractWav(sourceUrl, start, _segmentLengthSec, outPath);
+          if (!ok || _cancelRequested) {
+            try {
+              File(outPath).deleteSync();
+            } catch (_) {}
+            continue; // Try next segment
+          }
+
+          // Process with AudioFlux
+          final pcmData = await _extractPcmFromWav(outPath);
+          if (pcmData == null) {
+            try {
+              File(outPath).deleteSync();
+            } catch (_) {}
+            continue; // Try next segment
+          }
+
+          // Use AudioFlux for key detection
+          final audioFluxResult = await AudioFluxService.processAudioForKey(
+            pcmData: pcmData,
+            sampleRate: 22050.0, // Standard sample rate from _extractWav
+          );
+
+          // Cleanup
+          try {
+            File(outPath).deleteSync();
+          } catch (_) {}
+
+          if (audioFluxResult != null &&
+              audioFluxResult.confidence > bestConfidence) {
+            bestResult = audioFluxResult;
+            bestConfidence = audioFluxResult.confidence;
+            Logger.info(
+                'AudioFlux: Segment $i detected key: ${audioFluxResult.key} (conf=${audioFluxResult.confidence.toStringAsFixed(2)})');
+
+            // If confidence is high enough, use this result
+            if (bestConfidence > 0.7) break;
+          }
+        }
+
+        // If we got a reasonable result with good confidence, return it
+        if (bestResult != null && bestConfidence > 0.5) {
+          return bestResult;
+        }
+
+        // If AudioFlux gave us a result but low confidence, log it but fall back
+        if (bestResult != null) {
+          Logger.info(
+              'AudioFlux: Multi-segment low confidence result: ${bestResult.key} (${bestConfidence.toStringAsFixed(2)}), falling back to built-in detection');
+        }
+      } else {
+        // Single long segment approach
+        Logger.info('AudioFlux: Using single long segment analysis');
+        const double longSegmentLength = 60.0; // Use 60 seconds for AudioFlux
+
+        // Choose the best position for a long segment
+        final anchor = min(60.0, totalSec * 0.4); // Start earlier in the song
+        final start = max(0.0, anchor - (longSegmentLength * 0.5));
+
+        // Make sure the segment doesn't exceed track length
+        final effectiveStart = min(start, totalSec - longSegmentLength);
+        final effectiveLength =
+            min(longSegmentLength, totalSec - effectiveStart);
+
+        if (effectiveLength < 45.0) {
+          Logger.info(
+              'AudioFlux: Track too short (${totalSec.toStringAsFixed(1)}s) for long segment analysis');
+          return null;
+        }
+
+        final outPath =
+            '${tmpDir.path}/hm_audioflux_long_${DateTime.now().millisecondsSinceEpoch}.wav';
+
+        Logger.info(
+            'AudioFlux: Extracting long segment at ${effectiveStart.toStringAsFixed(2)}s for ${effectiveLength.toStringAsFixed(1)}s');
+
+        final ok = await _extractWav(
+            sourceUrl, effectiveStart, effectiveLength, outPath);
+        if (!ok || _cancelRequested) {
+          try {
+            File(outPath).deleteSync();
+          } catch (_) {}
+          Logger.info('AudioFlux: Long segment extraction failed');
+          return null;
+        }
+
+        // Process with AudioFlux
+        final pcmData = await _extractPcmFromWav(outPath);
+        if (pcmData == null) {
+          try {
+            File(outPath).deleteSync();
+          } catch (_) {}
+          Logger.info('AudioFlux: PCM extraction failed');
+          return null;
+        }
+
+        Logger.info(
+            'AudioFlux: Processing ${pcmData.length} samples (${(pcmData.length / 22050.0).toStringAsFixed(1)}s)');
+
+        // Use AudioFlux for key detection
+        final audioFluxResult = await AudioFluxService.processAudioForKey(
+          pcmData: pcmData,
+          sampleRate: 22050.0, // Standard sample rate from _extractWav
+        );
+
+        // Cleanup
+        try {
+          File(outPath).deleteSync();
+        } catch (_) {}
+
+        if (audioFluxResult != null) {
+          Logger.info(
+              'AudioFlux: Long segment detected key: ${audioFluxResult.key} (conf=${audioFluxResult.confidence.toStringAsFixed(2)})');
+
+          // Use a lower threshold for long segments since they should be more reliable
+          if (audioFluxResult.confidence > 0.4) {
+            return audioFluxResult;
+          } else {
+            Logger.info(
+                'AudioFlux: Long segment confidence still low (${audioFluxResult.confidence.toStringAsFixed(2)}), falling back');
+          }
+        }
+      }
+
+      // If AudioFlux failed or gave low confidence, fall back to built-in method
+      Logger.info(
+          'AudioFlux: Falling back to multi-segment built-in detection for more reliable results');
+      return null; // Let the caller fall back to built-in method
+    } catch (e) {
+      Logger.error('AudioFlux detection error: $e');
+      return null;
+    }
+  }
+
+  /// Original built-in key detection method (fallback)
+  static Future<KeyDetectionResult?> _detectKeyWithBuiltIn(
+    String sourceUrl,
+    double totalSec,
+    Directory tmpDir,
+    String? mediaId,
+  ) async {
+    try {
+      // Build 3 x 30s segments centered around ~47.5s, with +/- 20s offsets to capture context.
       // For very short tracks, fall back to distributed windows picked by _pickWindows().
       double anchor = 47.5; // seconds
       List<double> starts;
@@ -102,22 +435,29 @@ class KeyDetectionService {
             .toList()
           ..sort();
       }
-      printINFO('Multi-segment starts: ${starts.map((s) => s.toStringAsFixed(2)).join(', ')} (len=${_segmentLengthSec.toStringAsFixed(1)}s)');
+      Logger.info(
+          'Multi-segment starts: ${starts.map((s) => s.toStringAsFixed(2)).join(', ')} (len=${_segmentLengthSec.toStringAsFixed(1)}s)');
       final List<_ChromaBands> chromas = [];
       for (int i = 0; i < starts.length; i++) {
         if (_cancelRequested) return null;
         final start = starts[i];
-        final outPath = '${tmpDir.path}/hm_key_${DateTime.now().millisecondsSinceEpoch}_$i.wav';
-        final ok = await _extractWav(sourceUrl, start, _segmentLengthSec, outPath);
+        final outPath =
+            '${tmpDir.path}/hm_key_${DateTime.now().millisecondsSinceEpoch}_$i.wav';
+        final ok =
+            await _extractWav(sourceUrl, start, _segmentLengthSec, outPath);
         if (!ok) continue;
         if (_cancelRequested) {
-          try { File(outPath).deleteSync(); } catch (_) {}
+          try {
+            File(outPath).deleteSync();
+          } catch (_) {}
           return null;
         }
         final chroma = await _chromaFromWav(outPath);
         if (chroma != null) chromas.add(chroma);
         // cleanup
-        try { File(outPath).deleteSync(); } catch (_) {}
+        try {
+          File(outPath).deleteSync();
+        } catch (_) {}
       }
 
       if (chromas.isEmpty) return null;
@@ -138,13 +478,9 @@ class KeyDetectionService {
 
       // Probability-normalized chroma (for tonic/dominant heuristics)
       final avgSum = avg.fold(0.0, (a, b) => a + b) + 1e-12;
-      final prob = [
-        for (int i = 0; i < 12; i++) avg[i] / avgSum
-      ];
+      final prob = [for (int i = 0; i < 12; i++) avg[i] / avgSum];
       final avgBassSum = avgBass.fold(0.0, (a, b) => a + b) + 1e-12;
-      final bassProb = [
-        for (int i = 0; i < 12; i++) avgBass[i] / avgBassSum
-      ];
+      final bassProb = [for (int i = 0; i < 12; i++) avgBass[i] / avgBassSum];
 
       // Debug: print top-3 peaks in full and bass chroma
       List<int> topK(List<double> v, int k) {
@@ -152,25 +488,33 @@ class KeyDetectionService {
         idx.sort((a, b) => v[b].compareTo(v[a]));
         return idx.take(k).toList();
       }
+
       final topFull = topK(prob, 3);
       final topBass = topK(bassProb, 3);
-      printINFO('Chroma peaks (full): ${
-          topFull.map((i) => '${_notes[i]}=${prob[i].toStringAsFixed(2)}').join(', ')
-        }');
-      printINFO('Chroma peaks (bass): ${
-          topBass.map((i) => '${_notes[i]}=${bassProb[i].toStringAsFixed(2)}').join(', ')
-        }');
+      Logger.info(
+          'Chroma peaks (full): ${topFull.map((i) => '${_notes[i]}=${prob[i].toStringAsFixed(2)}').join(', ')}');
+      Logger.info(
+          'Chroma peaks (bass): ${topBass.map((i) => '${_notes[i]}=${bassProb[i].toStringAsFixed(2)}').join(', ')}');
 
       // Determine best key across Major, Minor, and Mixolydian, allowing rotations
-      final major = _bestKey(avg, prob, bassProb, _majorProfile, isMinor: false, debug: true, modeName: 'Major'); // (idx, score, name)
-      final minor = _bestKey(avg, prob, bassProb, _minorProfile, isMinor: true, debug: true, modeName: 'Minor');
-      final mix   = _bestKey(avg, prob, bassProb, _mixolydianProfile, isMinor: false, debug: true, modeName: 'Mixolydian');
+      final major = _bestKey(avg, prob, bassProb, _majorProfile,
+          isMinor: false, debug: true, modeName: 'Major'); // (idx, score, name)
+      final minor = _bestKey(avg, prob, bassProb, _minorProfile,
+          isMinor: true, debug: true, modeName: 'Minor');
+      final mix = _bestKey(avg, prob, bassProb, _mixolydianProfile,
+          isMinor: false, debug: true, modeName: 'Mixolydian');
 
       // Compare scores
       (int, double, String) best = major;
       String mode = 'Major';
-      if (minor.$2 > best.$2) { best = minor; mode = 'Minor'; }
-      if (mix.$2 > best.$2)   { best = mix;   mode = 'Mixolydian'; }
+      if (minor.$2 > best.$2) {
+        best = minor;
+        mode = 'Minor';
+      }
+      if (mix.$2 > best.$2) {
+        best = mix;
+        mode = 'Mixolydian';
+      }
 
       // Strong tie-breaker: if both full and bass chroma agree on the same peak with decent margins,
       // force that pitch class as tonic (favor Major) to avoid dominant/profile confusions.
@@ -185,20 +529,24 @@ class KeyDetectionService {
         // Tighten criteria: require decent gaps and avoid semitone near-ties around the peak; only force if profile confidence is modest
         final double leftNeighbor = prob[(peakFull + 11) % 12];
         final double rightNeighbor = prob[(peakFull + 1) % 12];
-        final bool semitoneNearTie = max(leftNeighbor, rightNeighbor) > (prob[peakFull] - 0.02);
+        final bool semitoneNearTie =
+            max(leftNeighbor, rightNeighbor) > (prob[peakFull] - 0.02);
         final bool gapsOk = gapFull >= 0.08 && gapBass >= 0.05;
         final bool profileLowConf = best.$2 < 0.80;
         if (!gapsOk || semitoneNearTie || !profileLowConf) {
-          printINFO('Block forcing: gapsOk=$gapsOk (full=${gapFull.toStringAsFixed(2)}, bass=${gapBass.toStringAsFixed(2)}), semitoneNearTie=$semitoneNearTie, profileConf=${best.$2.toStringAsFixed(2)}');
+          Logger.info(
+              'Block forcing: gapsOk=$gapsOk (full=${gapFull.toStringAsFixed(2)}, bass=${gapBass.toStringAsFixed(2)}), semitoneNearTie=$semitoneNearTie, profileConf=${best.$2.toStringAsFixed(2)}');
         } else if (best.$1 != peakFull) {
           final forcedNote = _notes[peakFull];
           // Pick mode: if b7 notably stronger than leading tone, use Mixolydian; otherwise Major
           final int b7Idx = (peakFull + 10) % 12;
-          final int leadingIdx = (peakFull + 11) % 12; // semitone below tonic in major
+          final int leadingIdx =
+              (peakFull + 11) % 12; // semitone below tonic in major
           final bool mixoFavored = prob[b7Idx] > prob[leadingIdx] + 0.03;
           final String forcedMode = mixoFavored ? 'Mixolydian' : 'Major';
           final conf = (gapFull + gapBass).clamp(0.0, 1.0);
-          printINFO('Forcing tonic by full+bass agreement: $forcedNote $forcedMode (gaps full=${gapFull.toStringAsFixed(2)}, bass=${gapBass.toStringAsFixed(2)}) (prev ${_notes[best.$1]} $mode)');
+          Logger.info(
+              'Forcing tonic by full+bass agreement: $forcedNote $forcedMode (gaps full=${gapFull.toStringAsFixed(2)}, bass=${gapBass.toStringAsFixed(2)}) (prev ${_notes[best.$1]} $mode)');
           best = (peakFull, conf, forcedNote);
           mode = forcedMode;
         }
@@ -207,20 +555,27 @@ class KeyDetectionService {
       // Final tonic tie-breaker: if the global full-chroma peak clearly dominates and is not weaker than its fifth in bass,
       // promote that pitch class as the tonic (favoring Major label), overriding profile picks.
       int globalIdx = 0;
-      for (int i = 1; i < 12; i++) { if (prob[i] > prob[globalIdx]) globalIdx = i; }
+      for (int i = 1; i < 12; i++) {
+        if (prob[i] > prob[globalIdx]) globalIdx = i;
+      }
       final int globalFifth = (globalIdx + 7) % 12;
       final double domMarginFull = prob[globalIdx] - prob[globalFifth];
       final double domMarginBass = bassProb[globalIdx] - bassProb[globalFifth];
       final double secondBest = [
-        for (int i = 0; i < 12; i++) if (i != globalIdx) prob[i]
+        for (int i = 0; i < 12; i++)
+          if (i != globalIdx) prob[i]
       ].reduce((a, b) => a > b ? a : b);
       final double peakGap = prob[globalIdx] - secondBest;
       // Be a bit more permissive: smaller peak gap and slight tolerance on bass margin
-      final bool clearlyDominant = peakGap > 0.06 && domMarginFull > 0.03 && domMarginBass > -0.05;
+      final bool clearlyDominant =
+          peakGap > 0.06 && domMarginFull > 0.03 && domMarginBass > -0.05;
       if (clearlyDominant && best.$1 != globalIdx) {
         final String forced = _notes[globalIdx];
-        final double relConf = (peakGap + max(0.0, domMarginFull) + max(0.0, domMarginBass)).clamp(0.0, 1.0);
-        printINFO('Forcing tonic by global-peak dominance: $forced (prev ${_notes[best.$1]} $mode)');
+        final double relConf =
+            (peakGap + max(0.0, domMarginFull) + max(0.0, domMarginBass))
+                .clamp(0.0, 1.0);
+        Logger.info(
+            'Forcing tonic by global-peak dominance: $forced (prev ${_notes[best.$1]} $mode)');
         best = (globalIdx, relConf, forced);
         mode = 'Major';
       }
@@ -235,10 +590,69 @@ class KeyDetectionService {
         label = _notes[best.$1]; // Major
       }
       final conf = best.$2;
-      printINFO('Detected key: $label (conf=${conf.toStringAsFixed(2)})');
+      Logger.info('Detected key: $label (conf=${conf.toStringAsFixed(2)})');
       return KeyDetectionResult(label, conf.clamp(0, 1));
     } catch (e) {
-      printINFO('Key detection failed: $e');
+      Logger.info('Built-in key detection failed: $e');
+      return null;
+    }
+  }
+
+  /// Extract PCM data from WAV file for AudioFlux processing
+  static Future<Float64List?> _extractPcmFromWav(String wavPath) async {
+    try {
+      final chroma = await _chromaFromWav(wavPath);
+      if (chroma == null) return null;
+
+      // Re-read the WAV file to get raw PCM data
+      final bytes = await File(wavPath).readAsBytes();
+      if (bytes.length < 44) return null;
+
+      final bd = ByteData.sublistView(bytes);
+      // Minimal WAV header parse
+      final channels = bd.getUint16(22, Endian.little);
+      bd.getUint32(24, Endian.little); // sampleRate - not used
+      final bitsPerSample = bd.getUint16(34, Endian.little);
+
+      // Find 'data' chunk
+      int pos = 12;
+      int dataOffset = -1;
+      int dataSize = 0;
+      while (pos + 8 <= bytes.length) {
+        final id = String.fromCharCodes(bytes.sublist(pos, pos + 4));
+        final size = bd.getUint32(pos + 4, Endian.little);
+        if (id == 'data') {
+          dataOffset = pos + 8;
+          dataSize = size;
+          break;
+        }
+        pos += 8 + size;
+      }
+      if (dataOffset < 0 || dataOffset + dataSize > bytes.length) return null;
+
+      // Read PCM data
+      final int bytesPerSample = bitsPerSample ~/ 8;
+      final int frameSize = bytesPerSample * channels;
+      final int frames = dataSize ~/ frameSize;
+      final pcm = Float64List(frames);
+      int r = dataOffset;
+      for (int i = 0; i < frames; i++) {
+        // take first channel
+        int sample = 0;
+        if (bitsPerSample == 16) {
+          sample = bd.getInt16(r, Endian.little);
+        } else if (bitsPerSample == 8) {
+          sample = (bd.getUint8(r) - 128) << 8;
+        } else {
+          return null;
+        }
+        pcm[i] = sample.toDouble() / 32768.0;
+        r += frameSize;
+      }
+
+      return pcm;
+    } catch (e) {
+      Logger.error('Error extracting PCM from WAV: $e');
       return null;
     }
   }
@@ -277,8 +691,10 @@ class KeyDetectionService {
     }
     final double maxProb = probChroma[maxIdx];
     // Precompute global top-3 peaks for presence checks
-    final fullIdx = List<int>.generate(12, (i) => i)..sort((a, b) => probChroma[b].compareTo(probChroma[a]));
-    final bassIdx = List<int>.generate(12, (i) => i)..sort((a, b) => bassProbChroma[b].compareTo(bassProbChroma[a]));
+    final fullIdx = List<int>.generate(12, (i) => i)
+      ..sort((a, b) => probChroma[b].compareTo(probChroma[a]));
+    final bassIdx = List<int>.generate(12, (i) => i)
+      ..sort((a, b) => bassProbChroma[b].compareTo(bassProbChroma[a]));
     final top3Full = fullIdx.take(3).toList();
     final top3Bass = bassIdx.take(3).toList();
 
@@ -307,9 +723,13 @@ class KeyDetectionService {
       final double tonicGapPenalty = max(0.0, 0.90 * maxProb - tonic) * 0.45;
 
       // Reward when global maximum aligns with candidate tonic.
-      final double tonicGlobalBonus = (maxIdx == tonicIdx) ? 0.40 * (tonic / (maxProb + 1e-12)) : 0.0;
+      final double tonicGlobalBonus =
+          (maxIdx == tonicIdx) ? 0.40 * (tonic / (maxProb + 1e-12)) : 0.0;
       // Penalize when global maximum aligns with candidate fifth (dominant) and tonic isn't global.
-      final double dominantGlobalPenalty = (maxIdx == fifthIdx && maxIdx != tonicIdx) ? 0.35 * (fifth / (maxProb + 1e-12)) : 0.0;
+      final double dominantGlobalPenalty =
+          (maxIdx == fifthIdx && maxIdx != tonicIdx)
+              ? 0.35 * (fifth / (maxProb + 1e-12))
+              : 0.0;
 
       // Bass-aware adjustment: prefer keys where the tonic is not weaker than the fifth in bass
       final bassTonic = bassProbChroma[tonicIdx];
@@ -319,8 +739,11 @@ class KeyDetectionService {
 
       // Mixolydian-specific: if b7 is the global peak and clearly stronger than tonic, downweight this mode
       double mixoPenalty = 0.0;
-      if (modeName == 'Mixolydian' && maxIdx == b7Idx && (probChroma[b7Idx] > tonic + 0.08)) {
-        mixoPenalty = 0.35 * ((probChroma[b7Idx] - tonic) / (probChroma[b7Idx] + 1e-12));
+      if (modeName == 'Mixolydian' &&
+          maxIdx == b7Idx &&
+          (probChroma[b7Idx] > tonic + 0.08)) {
+        mixoPenalty =
+            0.35 * ((probChroma[b7Idx] - tonic) / (probChroma[b7Idx] + 1e-12));
       }
 
       // Presence check: prefer candidates whose tonic appears among global top-3 peaks
@@ -336,17 +759,17 @@ class KeyDetectionService {
           ? 0.05 * max(0.0, bassProbChroma[tonicIdx] - thirdBass)
           : -0.05 * max(0.0, thirdBass - bassProbChroma[tonicIdx]);
 
-      final score = dot
-          - dominantPenalty
-          - bassPenalty
-          - tonicGapPenalty
-          - dominantGlobalPenalty
-          - mixoPenalty
-          + tonicBonus
-          + tonicGlobalBonus
-          + bassBonus
-          + presenceBonusFull
-          + presenceBonusBass;
+      final score = dot -
+          dominantPenalty -
+          bassPenalty -
+          tonicGapPenalty -
+          dominantGlobalPenalty -
+          mixoPenalty +
+          tonicBonus +
+          tonicGlobalBonus +
+          bassBonus +
+          presenceBonusFull +
+          presenceBonusBass;
       if (score > bestScore) {
         bestScore = score;
         bestIdx = shift;
@@ -361,15 +784,19 @@ class KeyDetectionService {
       // Relative 0..1 scores for readability
       final denom = (maxScore - minScore).abs() + 1e-12;
       final summary = top
-          .map((e) => '${_notes[e.$1]}=${((e.$2 - minScore) / denom).clamp(0.0, 1.0).toStringAsFixed(2)}')
+          .map((e) =>
+              '${_notes[e.$1]}=${((e.$2 - minScore) / denom).clamp(0.0, 1.0).toStringAsFixed(2)}')
           .join(', ');
-      printINFO('Top ${modeName.isEmpty ? '' : '$modeName '}candidates: $summary');
+      Logger.info(
+          'Top ${modeName.isEmpty ? '' : '$modeName '}candidates: $summary');
     }
     final name = isMinor ? '${_notes[bestIdx]} minor' : _notes[bestIdx];
     // Relative confidence vs other candidates
     // Calibrate confidence to avoid overconfident 1.00; cap at 0.88
-    final conf = (((bestScore - minScore) / ((maxScore - minScore).abs() + 1e-12)) * 0.95)
-        .clamp(0.0, 0.88);
+    final conf =
+        (((bestScore - minScore) / ((maxScore - minScore).abs() + 1e-12)) *
+                0.95)
+            .clamp(0.0, 0.88);
     return (bestIdx, conf, name);
   }
 
@@ -392,7 +819,8 @@ class KeyDetectionService {
   }
 
   // Choose windows between 10% and 90% of the track, spaced apart
-  static List<double> _pickWindows(double totalSec, {int windows = 3, double winSec = 10.0}) {
+  static List<double> _pickWindows(double totalSec,
+      {int windows = 3, double winSec = 30.0}) {
     final List<double> res = [];
     if (totalSec <= winSec) return [0.0];
     final double minStart = max(0.0, totalSec * 0.1);
@@ -409,7 +837,8 @@ class KeyDetectionService {
   }
 
   // Use ffmpeg to extract a mono wav at 22050Hz
-  static Future<bool> _extractWav(String input, double startSec, double lenSec, String outPath) async {
+  static Future<bool> _extractWav(
+      String input, double startSec, double lenSec, String outPath) async {
     // Quote URLs with special chars
     final inEsc = input.replaceAll('"', '\\"');
 
@@ -419,14 +848,14 @@ class KeyDetectionService {
       final uri = Uri.tryParse(input);
       final host = uri?.host ?? '';
       if (host.contains('googlevideo.com') || host.contains('youtube.com')) {
-        const hdr = 'Referer: https://www.youtube.com\r\nOrigin: https://www.youtube.com';
-        headerOpt = '-headers "$hdr" ';
+        // Fix CRLF header issue by using proper escaping
+        headerOpt =
+            '-headers "Referer: https://www.youtube.com\r\nOrigin: https://www.youtube.com" ';
       }
     } catch (_) {}
 
     // Common robust flags for network streams
-    const common =
-        '-nostdin -hide_banner -loglevel info '
+    const common = '-nostdin -hide_banner -loglevel info '
         // Increase read/write timeout to 30s (microseconds)
         '-rw_timeout 30000000 '
         // Allow encrypted HLS
@@ -445,6 +874,8 @@ class KeyDetectionService {
       variants = <String>[
         // No seek: read from 0 for lenSec. Most robust for streaming/DASH.
         '$common $headerOpt-i "$inEsc" -t $lenSec -vn -sn -ac 1 -ar 22050 -f wav -y "$outPath"',
+        // Fallback without headers
+        '$common -i "$inEsc" -t $lenSec -vn -sn -ac 1 -ar 22050 -f wav -y "$outPath"',
         // Accurate seek after demux; better compatibility for DASH/HLS
         '$common $headerOpt-i "$inEsc" -ss $startSec -t $lenSec -vn -sn -ac 1 -ar 22050 -f wav -y "$outPath"',
         // Fast seek first (try last); may fail on some servers
@@ -454,6 +885,8 @@ class KeyDetectionService {
       variants = <String>[
         // Accurate seek after demux; better compatibility for DASH/HLS
         '$common $headerOpt-i "$inEsc" -ss $startSec -t $lenSec -vn -sn -ac 1 -ar 22050 -f wav -y "$outPath"',
+        // Fallback without headers
+        '$common -i "$inEsc" -ss $startSec -t $lenSec -vn -sn -ac 1 -ar 22050 -f wav -y "$outPath"',
         // Fast seek first (try last); may fail on some servers
         '$common $headerOpt-ss $startSec -t $lenSec -i "$inEsc" -vn -sn -ac 1 -ar 22050 -f wav -y "$outPath"',
       ];
@@ -461,17 +894,18 @@ class KeyDetectionService {
 
     for (final cmd in variants) {
       if (_cancelRequested) return false;
-      printINFO('ffmpeg cmd: $cmd');
+      Logger.info('ffmpeg cmd: $cmd');
       final session = await FFmpegKit.execute(cmd);
       final rc = await session.getReturnCode();
       final ok = rc?.isValueSuccess() == true && File(outPath).existsSync();
       if (ok) return true;
-      printINFO('ffmpeg segment extraction failed: ${rc?.getValue()}');
+      Logger.info('ffmpeg segment extraction failed: ${rc?.getValue()}');
       try {
         final logs = await session.getAllLogsAsString();
         if (logs != null && logs.isNotEmpty) {
-          final excerpt = logs.length > 2000 ? logs.substring(logs.length - 2000) : logs;
-          printINFO('ffmpeg logs (tail):\n$excerpt');
+          final excerpt =
+              logs.length > 2000 ? logs.substring(logs.length - 2000) : logs;
+          Logger.info('ffmpeg logs (tail):\n$excerpt');
         }
       } catch (_) {}
     }
@@ -483,7 +917,8 @@ class KeyDetectionService {
     try {
       final uri = Uri.tryParse(input);
       String? videoId;
-      if (uri != null && (uri.host.contains('youtube.com') || uri.host.contains('youtu.be'))) {
+      if (uri != null &&
+          (uri.host.contains('youtube.com') || uri.host.contains('youtu.be'))) {
         // Try to extract videoId from URL
         if (uri.host.contains('youtu.be')) {
           videoId = uri.pathSegments.isNotEmpty ? uri.pathSegments.first : null;
@@ -571,7 +1006,8 @@ class KeyDetectionService {
     final bassBins = List<double>.filled(12, 0.0);
     // Accumulate energy via Goertzel for each pitch class across octaves
     // Reference frequency for pitch class k: f = 440 * 2^((n)/12), iterate various n
-    final List<int> semitoneOffsets = List<int>.generate(12, (i) => i - 9); // align A=440 as 0 -> map after
+    final List<int> semitoneOffsets =
+        List<int>.generate(12, (i) => i - 9); // align A=440 as 0 -> map after
 
     // analyze in windows of ~4096 samples with hop 2048
     final win = min(4096, pcm.length);

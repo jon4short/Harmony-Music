@@ -4,7 +4,6 @@ import 'dart:math';
 
 import 'package:flutter/services.dart';
 
-
 import 'package:hive/hive.dart';
 import 'package:get/get.dart';
 import 'package:just_audio/just_audio.dart';
@@ -23,7 +22,7 @@ import '/ui/player/player_controller.dart';
 import '../ui/screens/Home/home_screen_controller.dart';
 import '/services/background_task.dart';
 import '/services/permission_service.dart';
-import '../utils/helper.dart';
+import '/utils/logger.dart';
 import '/models/media_Item_builder.dart';
 import '/services/utils.dart';
 import '../ui/screens/Settings/settings_screen_controller.dart';
@@ -34,13 +33,16 @@ import '/services/audio_handler_android_mk.dart';
 
 Future<AudioHandler> initAudioService() async {
   return await AudioService.init(
-    builder: () => GetPlatform.isAndroid ? MyAudioHandlerAndroidMK() : MyAudioHandler(),
+    builder: () =>
+        GetPlatform.isAndroid ? MyAudioHandlerAndroidMK() : MyAudioHandler(),
     config: const AudioServiceConfig(
-      androidNotificationIcon: 'mipmap/ic_launcher_monochrome',
+      androidNotificationIcon: 'mipmap/ic_launcher',
       androidNotificationChannelId: 'com.mycompany.myapp.audio',
       androidNotificationChannelName: 'Harmony Music Notification',
-      androidNotificationOngoing: true,
-      androidStopForegroundOnPause: true,
+      androidNotificationOngoing: false, // Allow notification to be dismissed
+      androidStopForegroundOnPause: true, // Stop foreground when paused
+      androidNotificationClickStartsActivity: true,
+      androidShowNotificationBadge: true,
     ),
   );
 }
@@ -113,7 +115,7 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
     try {
       _player.setAudioSource(_playList);
     } catch (r) {
-      printERROR(r.toString());
+      Logger.error(r.toString());
     }
   }
 
@@ -165,10 +167,10 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
       //print("set ${playbackState.value.queueIndex},${event.currentIndex}");
     }, onError: (Object e, StackTrace st) async {
       if (e is PlayerException) {
-        printERROR('Error code: ${e.code}');
-        printERROR('Error message: ${e.message}');
+        Logger.error('Error code: ${e.code}');
+        Logger.error('Error message: ${e.message}');
       } else {
-        printERROR('An error occurred: $e');
+        Logger.error('An error occurred: $e');
         Duration curPos = _player.position;
         await _player.stop();
 
@@ -282,7 +284,7 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
     if (url.contains('/cache') ||
         (Get.find<SettingsScreenController>().cacheSongs.isTrue &&
             url.contains("http"))) {
-      printINFO("Playing Using LockCaching");
+      Logger.info("Playing Using LockCaching");
       isPlayingUsingLockCachingSource = true;
       return LockCachingAudioSource(
         Uri.parse(url),
@@ -291,7 +293,7 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
       );
     }
 
-    printINFO("Playing Using AudioSource.uri");
+    Logger.info("Playing Using AudioSource.uri");
     isPlayingUsingLockCachingSource = false;
     return AudioSource.uri(
       Uri.tryParse(url)!,
@@ -444,7 +446,6 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
   @override
   Future<void> customAction(String name, [Map<String, dynamic>? extras]) async {
     switch (name) {
-
       case 'dispose':
         await _player.dispose();
         super.stop();
@@ -600,7 +601,7 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
                   streamInfo == null ? 0 : streamInfo[1]["loudnessDb"]);
             }
           } catch (e) {
-            printERROR(e);
+            Logger.error('$e');
           }
         }
         break;
@@ -716,7 +717,7 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
     // We use a factor to convert dB difference to a linear scale
     // 10^(difference / 20) converts dB difference to a linear volume factor
     final volumeAdjustment = pow(10.0, loudnessDifference / 20.0);
-    printINFO(
+    Logger.info(
         "loudness:$currentLoudnessDb Normalized volume: $volumeAdjustment");
     _player.setVolume(volumeAdjustment.toDouble().clamp(0, 1.0));
   }
@@ -736,7 +737,7 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
       await prevSessionData.putAll(
           {"queue": queueData, "position": position, "index": currIndex});
       await prevSessionData.close();
-      printINFO("Saved session data");
+      Logger.info("Saved session data");
     }
   }
 
@@ -768,12 +769,24 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
 
   @override
   Future<void> onTaskRemoved() async {
+    final settingsController = Get.find<SettingsScreenController>();
     final stopForegroundService =
-        Get.find<SettingsScreenController>().stopPlyabackOnSwipeAway.value;
+        settingsController.stopPlyabackOnSwipeAway.value;
+
+    Logger.info('Task removed - stopForegroundService: $stopForegroundService');
+
     if (stopForegroundService) {
+      // User wants app to close when swiped away
       await Get.find<HomeScreenController>().cachedHomeScreenData();
       await saveSessionData();
       await stop();
+
+      // Force terminate the app
+      Logger.info('Forcing app termination after task removal');
+      await SystemChannels.platform.invokeMethod('SystemNavigator.pop');
+    } else {
+      // Keep playing in background
+      Logger.info('Continuing playback in background after task removal');
     }
   }
 
@@ -786,11 +799,11 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
 // Work around used [useNewInstanceOfExplode = false] to Fix Connection closed before full header was received issue
   Future<HMStreamingData> checkNGetUrl(String songId,
       {bool generateNewUrl = false, bool offlineReplacementUrl = false}) async {
-    printINFO("Requested id : $songId");
+    Logger.info("Requested id : $songId");
     final songDownloadsBox = Hive.box("SongDownloads");
     if (!offlineReplacementUrl &&
         (await Hive.openBox("SongsCache")).containsKey(songId)) {
-      printINFO("Got Song from cachedbox ($songId)");
+      Logger.info("Got Song from cachedbox ($songId)");
       // if contains stream Info
       final streamInfo = Hive.box("SongsCache").get(songId)["streamInfo"];
       Audio? cacheAudioPlaceholder;
@@ -857,7 +870,7 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
         final streamInfoJson = songsUrlCacheBox.get(songId);
         if (streamInfoJson.runtimeType.toString().contains("Map") &&
             !isExpired(url: (streamInfoJson['lowQualityAudio']['url']))) {
-          printINFO("Got cached Url ($songId)");
+          Logger.info("Got cached Url ($songId)");
           streamInfo = HMStreamingData.fromJson(streamInfoJson);
         }
       }
@@ -879,7 +892,6 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
 class UrlError extends Error {
   String message() => 'Unable to fetch url';
 }
-
 
 // for Android Auto
 class MediaLibrary {

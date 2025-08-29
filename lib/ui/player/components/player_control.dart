@@ -347,13 +347,57 @@ class _PitchControlSection extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Text(
-            'Pitch: ${semis > 0 ? '+' : ''}$semis st',
-            textAlign: TextAlign.center,
-            style: Theme.of(context)
-                .textTheme
-                .labelSmall
-                ?.copyWith(color: cs.onSurface),
+          // Pitch and Key detection side-by-side for better accessibility
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Flexible(
+                child: Text(
+                  'Pitch: ${semis > 0 ? '+' : ''}$semis st',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelSmall
+                      ?.copyWith(color: cs.onSurface),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Flexible(
+                child: GestureDetector(
+                  onTap: () => _showMaterialKeySheet(context, playerController),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          displayLabel,
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(color: cs.onSurface),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Tooltip(
+                        message: 'Reload key detection',
+                        child: IconButton(
+                          icon: const Icon(Icons.refresh, size: 18),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                          onPressed: () async {
+                            await playerController.clearManualKeyOverride(reDetect: true);
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
           Row(
             children: [
@@ -387,39 +431,7 @@ class _PitchControlSection extends StatelessWidget {
               ),
             ],
           ),
-          GestureDetector(
-            onTap: () => _showMaterialKeySheet(context, playerController),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Flexible(
-                  child: Text(
-                    displayLabel,
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context)
-                        .textTheme
-                        .labelSmall
-                        ?.copyWith(color: cs.onSurface),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Tooltip(
-                  message: 'Reload key detection',
-                  child: IconButton(
-                    icon: const Icon(Icons.refresh, size: 18),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                    onPressed: () async {
-                      await playerController.clearManualKeyOverride(reDetect: true);
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
+
         ],
       );
     });

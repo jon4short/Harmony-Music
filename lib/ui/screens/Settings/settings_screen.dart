@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:harmonymusic/utils/helper.dart';
-import 'package:harmonymusic/utils/lang_mapping.dart';
+import 'package:harmonic/utils/helper.dart';
+import 'package:harmonic/utils/lang_mapping.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../widgets/common_dialog_widget.dart';
@@ -435,13 +435,44 @@ class SettingsScreen extends StatelessWidget {
                           onChanged: settingsController.toggleAutoOpenPlayer),
                     ),
                   ),
+                  if (GetPlatform.isAndroid)
+                    ListTile(
+                      contentPadding: const EdgeInsets.only(left: 5, right: 10),
+                      title: const Text("Multi-Segment Key Detection Analysis"),
+                      subtitle: Text(
+                          "If Off, it uses One Long Segment for key detection. If On, it uses multiple segments for more robust analysis.",
+                          style: Theme.of(context).textTheme.bodyMedium),
+                      trailing: Obx(
+                        () => CustSwitch(
+                            value: settingsController
+                                .multiSegmentKeyDetectionEnabled.value,
+                            onChanged: settingsController
+                                .toggleMultiSegmentKeyDetection),
+                      ),
+                    ),
+                  if (GetPlatform.isAndroid)
+                    ListTile(
+                        contentPadding:
+                            const EdgeInsets.only(left: 5, right: 10),
+                        title: const Text("Use AudioFlux Key Detection"),
+                        subtitle: Text(
+                            "Enhanced key detection using AudioFlux library for more accurate musical key analysis",
+                            style: Theme.of(context).textTheme.bodyMedium),
+                        trailing: Obx(
+                          () => CustSwitch(
+                              value: settingsController
+                                  .audioFluxKeyDetectionEnabled.value,
+                              onChanged: settingsController
+                                  .toggleAudioFluxKeyDetection),
+                        )),
                   if (!isDesktop)
                     ListTile(
                       contentPadding:
                           const EdgeInsets.only(left: 5, right: 10, top: 0),
-                      title: Text("equalizer".tr),
-                      subtitle: Text("equalizerDes".tr,
+                      title: Text("builtInEqualizer".tr),
+                      subtitle: Text("equalizerDescription".tr,
                           style: Theme.of(context).textTheme.bodyMedium),
+                      leading: const Icon(Icons.equalizer),
                       onTap: () async {
                         try {
                           await Get.find<PlayerController>().openEqualizer();
@@ -675,7 +706,7 @@ class SettingsScreen extends StatelessWidget {
                     child: Column(
                       children: [
                         Text(
-                          "Harmony Music",
+                          "Harmonic",
                           style: Theme.of(context).textTheme.titleLarge,
                         ),
                         Text(settingsController.currentVersion,

@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:harmonymusic/services/permission_service.dart';
+import 'package:harmonic/services/permission_service.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -46,7 +46,9 @@ class SettingsScreenController extends GetxController {
   final backgroundPlayEnabled = true.obs;
   final restorePlaybackSession = false.obs;
   final cacheHomeScreenData = true.obs;
-  final currentVersion = "V1.12.0";
+  final audioFluxKeyDetectionEnabled = false.obs;
+  final multiSegmentKeyDetectionEnabled = true.obs;
+  final currentVersion = "v0.9";
 
   @override
   void onInit() {
@@ -119,13 +121,17 @@ class SettingsScreenController extends GetxController {
       isLinkedWithPiped.value = setBox.get("piped")['isLoggedIn'];
     }
     stopPlyabackOnSwipeAway.value =
-        setBox.get('stopPlyabackOnSwipeAway') ?? false;
+        setBox.get('stopPlyabackOnSwipeAway') ?? true;
     if (GetPlatform.isAndroid) {
       isIgnoringBatteryOptimizations.value =
           (await Permission.ignoreBatteryOptimizations.isGranted);
     }
     autoDownloadFavoriteSongEnabled.value =
         setBox.get("autoDownloadFavoriteSongEnabled") ?? false;
+    audioFluxKeyDetectionEnabled.value =
+        setBox.get("audioFluxKeyDetectionEnabled") ?? true;
+    multiSegmentKeyDetectionEnabled.value =
+        setBox.get("multiSegmentKeyDetectionEnabled") ?? true;
   }
 
   void setAppLanguage(String? val) {
@@ -291,6 +297,16 @@ class SettingsScreenController extends GetxController {
   void toggleAutoDownloadFavoriteSong(bool val) {
     setBox.put("autoDownloadFavoriteSongEnabled", val);
     autoDownloadFavoriteSongEnabled.value = val;
+  }
+
+  void toggleAudioFluxKeyDetection(bool val) {
+    setBox.put("audioFluxKeyDetectionEnabled", val);
+    audioFluxKeyDetectionEnabled.value = val;
+  }
+
+  void toggleMultiSegmentKeyDetection(bool val) {
+    setBox.put("multiSegmentKeyDetectionEnabled", val);
+    multiSegmentKeyDetectionEnabled.value = val;
   }
 
   void toggleBackgroundPlay(bool val) {

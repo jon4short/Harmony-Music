@@ -18,6 +18,8 @@ import '../../widgets/quickpickswidget.dart';
 import '../../widgets/shimmer_widgets/home_shimmer.dart';
 import 'home_screen_controller.dart';
 import '../Settings/settings_screen.dart';
+import '/models/quick_picks.dart';
+import '/models/artist.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -122,177 +124,329 @@ class Body extends StatelessWidget {
                 : 85.0;
     final leftPadding =
         settingsScreenController.isBottomNavBarEnabled.isTrue ? 20.0 : 5.0;
-    if (homeScreenController.tabIndex.value == 0) {
-      return Padding(
-        padding: EdgeInsets.only(left: leftPadding),
-        child: Stack(
-          children: [
-            GestureDetector(
-              onTap: () {
-                // for Desktop search bar
-                if (GetPlatform.isDesktop) {
-                  final sscontroller = Get.find<SearchScreenController>();
-                  if (sscontroller.focusNode.hasFocus) {
-                    sscontroller.focusNode.unfocus();
-                  }
-                }
-              },
-              child: Obx(
-                () => homeScreenController.networkError.isTrue
-                    ? SizedBox(
-                        height: MediaQuery.of(context).size.height - 180,
-                        child: Column(
-                          children: [
-                            Align(
-                              alignment: Alignment.topLeft,
-                              child: Text(
-                                "home".tr,
-                                style: Theme.of(context).textTheme.titleLarge,
-                              ),
-                            ),
-                            Expanded(
-                              child: Center(
-                                child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Text(
-                                        "networkError1".tr,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .titleMedium,
-                                      ),
-                                      const SizedBox(
-                                        height: 10,
-                                      ),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 15, vertical: 10),
-                                        decoration: BoxDecoration(
-                                            color: Theme.of(context)
-                                                .textTheme
-                                                .titleLarge!
-                                                .color,
-                                            borderRadius:
-                                                BorderRadius.circular(10)),
-                                        child: InkWell(
-                                          onTap: () {
-                                            homeScreenController
-                                                .loadContentFromNetwork();
-                                          },
-                                          child: Text(
-                                            "retry".tr,
-                                            style: TextStyle(
-                                                color: Theme.of(context)
-                                                    .canvasColor),
-                                          ),
-                                        ),
-                                      ),
-                                    ]),
-                              ),
-                            )
-                          ],
-                        ),
-                      )
-                    : Obx(() {
-                        // dispose all detachached scroll controllers
-                        homeScreenController.disposeDetachedScrollControllers();
-                        final items = homeScreenController
-                                .isContentFetched.value
-                            ? [
-                                Obx(() {
-                                  final scrollController = ScrollController();
-                                  homeScreenController.contentScrollControllers
-                                      .add(scrollController);
-                                  return QuickPicksWidget(
-                                      content:
-                                          homeScreenController.quickPicks.value,
-                                      scrollController: scrollController);
-                                }),
-                                Obx(() {
-                                  final fresh = homeScreenController.freshNewMusic.value;
-                                  if (fresh == null) return const SizedBox.shrink();
-                                  final sc = ScrollController();
-                                  homeScreenController.contentScrollControllers.add(sc);
-                                  return QuickPicksWidget(
-                                    content: fresh,
-                                    scrollController: sc,
-                                  );
-                                }),
-                                Obx(() => homeScreenController
-                                        .christianArtists.isNotEmpty
-                                    ? ArtistCarouselWidget(
-                                        title: 'Christian Artists',
-                                        artists: homeScreenController
-                                            .christianArtists,
-                                      )
-                                    : const SizedBox.shrink()),
-                                ...getWidgetList(
-                                    homeScreenController.middleContent,
-                                    homeScreenController),
-                                ...getWidgetList(
-                                    homeScreenController.fixedContent,
-                                    homeScreenController)
-                              ]
-                            : [const HomeShimmer()];
-                        return ListView.builder(
-                          padding:
-                              EdgeInsets.only(bottom: 200, top: topPadding),
-                          itemCount: items.length,
-                          itemBuilder: (context, index) => items[index],
-                        );
-                      }),
-              ),
-            ),
-            if (GetPlatform.isDesktop)
-              Align(
-                alignment: Alignment.topCenter,
-                child: LayoutBuilder(builder: (context, constraints) {
-                  return SizedBox(
-                    width: constraints.maxWidth > 800
-                        ? 800
-                        : constraints.maxWidth - 40,
-                    child: const Padding(
-                        padding: EdgeInsets.only(top: 15.0),
-                        child: DesktopSearchBar()),
-                  );
-                }),
-              )
-          ],
-        ),
-      );
-    } else if (homeScreenController.tabIndex.value == 1) {
-      return settingsScreenController.isBottomNavBarEnabled.isTrue
-          ? const SearchScreen()
-          : const SongsLibraryWidget();
-    } else if (homeScreenController.tabIndex.value == 2) {
-      return settingsScreenController.isBottomNavBarEnabled.isTrue
-          ? const CombinedLibrary()
-          : const PlaylistNAlbumLibraryWidget(isAlbumContent: false);
-    } else if (homeScreenController.tabIndex.value == 3) {
-      return settingsScreenController.isBottomNavBarEnabled.isTrue
-          ? const SettingsScreen(isBottomNavActive: true)
-          : const PlaylistNAlbumLibraryWidget();
-    } else if (homeScreenController.tabIndex.value == 4) {
-      return const LibraryArtistWidget();
-    } else if (homeScreenController.tabIndex.value == 5) {
-      return const SettingsScreen();
-    } else {
-      return Center(
-        child: Text("${homeScreenController.tabIndex.value}"),
-      );
-    }
+    
+    return Obx(() {
+      final tabIndex = homeScreenController.tabIndex.value;
+      
+      if (tabIndex == 0) {
+        return _buildHomeContent(context, homeScreenController, settingsScreenController, topPadding, leftPadding);
+      } else if (tabIndex == 1) {
+        return settingsScreenController.isBottomNavBarEnabled.isTrue
+            ? const SearchScreen()
+            : const SongsLibraryWidget();
+      } else if (tabIndex == 2) {
+        return settingsScreenController.isBottomNavBarEnabled.isTrue
+            ? const CombinedLibrary()
+            : const PlaylistNAlbumLibraryWidget(isAlbumContent: false);
+      } else if (tabIndex == 3) {
+        return settingsScreenController.isBottomNavBarEnabled.isTrue
+            ? const SettingsScreen(isBottomNavActive: true)
+            : const PlaylistNAlbumLibraryWidget();
+      } else if (tabIndex == 4) {
+        return const LibraryArtistWidget();
+      } else if (tabIndex == 5) {
+        return const SettingsScreen();
+      } else {
+        return Center(
+          child: Text("$tabIndex"),
+        );
+      }
+    });
   }
 
-  List<Widget> getWidgetList(
-      dynamic list, HomeScreenController homeScreenController) {
-    return list
-        .map((content) {
-          final scrollController = ScrollController();
-          homeScreenController.contentScrollControllers.add(scrollController);
-          return ContentListWidget(
-              content: content, scrollController: scrollController);
-        })
-        .whereType<Widget>()
+  Widget _buildHomeContent(
+    BuildContext context,
+    HomeScreenController homeScreenController,
+    SettingsScreenController settingsScreenController,
+    double topPadding,
+    double leftPadding,
+  ) {
+    return Padding(
+      padding: EdgeInsets.only(left: leftPadding),
+      child: Stack(
+        children: [
+          GestureDetector(
+            onTap: () {
+              // for Desktop search bar
+              if (GetPlatform.isDesktop) {
+                final sscontroller = Get.find<SearchScreenController>();
+                if (sscontroller.focusNode.hasFocus) {
+                  sscontroller.focusNode.unfocus();
+                }
+              }
+            },
+            child: Obx(
+              () => homeScreenController.networkError.isTrue
+                  ? _buildErrorWidget(context, homeScreenController)
+                  : _buildContentWidget(context, homeScreenController, topPadding),
+            ),
+          ),
+          if (GetPlatform.isDesktop) _buildDesktopSearchBar(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorWidget(BuildContext context, HomeScreenController homeScreenController) {
+    return SizedBox(
+      height: MediaQuery.of(context).size.height - 180,
+      child: Column(
+        children: [
+          Align(
+            alignment: Alignment.topLeft,
+            child: Text(
+              "home".tr,
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+          ),
+          Expanded(
+            child: Center(
+              child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      "networkError1".tr,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 15, vertical: 10),
+                      decoration: BoxDecoration(
+                          color: Theme.of(context).textTheme.titleLarge!.color,
+                          borderRadius: BorderRadius.circular(10)),
+                      child: InkWell(
+                        onTap: () {
+                          homeScreenController.loadContentFromNetwork();
+                        },
+                        child: Text(
+                          "retry".tr,
+                          style: TextStyle(
+                              color: Theme.of(context).canvasColor),
+                        ),
+                      ),
+                    ),
+                  ]),
+            ),
+          )
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContentWidget(BuildContext context, HomeScreenController homeScreenController, double topPadding) {
+    return Obx(() {
+      // dispose all detached scroll controllers
+      homeScreenController.disposeDetachedScrollControllers();
+      
+      return homeScreenController.isContentFetched.value
+          ? _PerformantHomeList(
+              homeScreenController: homeScreenController,
+              topPadding: topPadding,
+            )
+          : Padding(
+              padding: EdgeInsets.only(top: topPadding),
+              child: const HomeShimmer(),
+            );
+    });
+  }
+
+  Widget _buildDesktopSearchBar() {
+    return Align(
+      alignment: Alignment.topCenter,
+      child: LayoutBuilder(builder: (context, constraints) {
+        return SizedBox(
+          width: constraints.maxWidth > 800 ? 800 : constraints.maxWidth - 40,
+          child: const Padding(
+              padding: EdgeInsets.only(top: 15.0), child: DesktopSearchBar()),
+        );
+      }),
+    );
+  }
+
+}
+
+// Performance-optimized list widget with memoization
+class _PerformantHomeList extends StatefulWidget {
+  const _PerformantHomeList({
+    required this.homeScreenController,
+    required this.topPadding,
+  });
+
+  final HomeScreenController homeScreenController;
+  final double topPadding;
+
+  @override
+  State<_PerformantHomeList> createState() => _PerformantHomeListState();
+}
+
+class _PerformantHomeListState extends State<_PerformantHomeList>
+    with AutomaticKeepAliveClientMixin {
+  late List<Widget> _cachedItems;
+  late List<dynamic> _lastDataSignature;
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  void initState() {
+    super.initState();
+    _buildCachedItems();
+  }
+
+  void _buildCachedItems() {
+    final items = <Widget>[];
+    
+    // Quick Picks Widget - memoized
+    items.add(_MemoizedQuickPicks(
+      quickPicks: widget.homeScreenController.quickPicks.value,
+      homeScreenController: widget.homeScreenController,
+    ));
+    
+    // Fresh New Music Widget - memoized
+    final freshMusic = widget.homeScreenController.freshNewMusic.value;
+    if (freshMusic != null) {
+      items.add(_MemoizedQuickPicks(
+        quickPicks: freshMusic,
+        homeScreenController: widget.homeScreenController,
+      ));
+    }
+    
+    // Christian Artists Carousel - memoized
+    final artists = widget.homeScreenController.christianArtists;
+    if (artists.isNotEmpty) {
+      items.add(_MemoizedArtistCarousel(
+        artists: artists,
+        title: 'Christian Artists',
+      ));
+    }
+    
+    // Middle and Fixed Content - memoized
+    items.addAll(_buildMemoizedContentWidgets(
+        widget.homeScreenController.middleContent));
+    items.addAll(_buildMemoizedContentWidgets(
+        widget.homeScreenController.fixedContent));
+    
+    _cachedItems = items;
+    _lastDataSignature = [
+      widget.homeScreenController.quickPicks.value.songList.length,
+      widget.homeScreenController.freshNewMusic.value?.songList.length ?? 0,
+      widget.homeScreenController.christianArtists.length,
+      widget.homeScreenController.middleContent.length,
+      widget.homeScreenController.fixedContent.length,
+    ];
+  }
+
+  List<Widget> _buildMemoizedContentWidgets(dynamic contentList) {
+    return contentList
+        .map<Widget>((content) => _MemoizedContentListWidget(
+              content: content,
+              homeScreenController: widget.homeScreenController,
+            ))
         .toList();
+  }
+
+  bool _shouldRebuildCache() {
+    final currentSignature = [
+      widget.homeScreenController.quickPicks.value.songList.length,
+      widget.homeScreenController.freshNewMusic.value?.songList.length ?? 0,
+      widget.homeScreenController.christianArtists.length,
+      widget.homeScreenController.middleContent.length,
+      widget.homeScreenController.fixedContent.length,
+    ];
+    
+    if (_lastDataSignature.length != currentSignature.length) {
+      return true;
+    }
+    
+    for (int i = 0; i < currentSignature.length; i++) {
+      if (_lastDataSignature[i] != currentSignature[i]) {
+        return true;
+      }
+    }
+    
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    
+    return Obx(() {
+      // Only rebuild if data actually changed
+      if (_shouldRebuildCache()) {
+        _buildCachedItems();
+      }
+      
+      return ListView.builder(
+        padding: EdgeInsets.only(bottom: 200, top: widget.topPadding),
+        itemCount: _cachedItems.length,
+        itemBuilder: (context, index) => _cachedItems[index],
+        cacheExtent: 1000, // Optimize viewport caching
+      );
+    });
+  }
+}
+
+// Memoized QuickPicks Widget
+class _MemoizedQuickPicks extends StatelessWidget {
+  const _MemoizedQuickPicks({
+    required this.quickPicks,
+    required this.homeScreenController,
+  });
+
+  final QuickPicks quickPicks;
+  final HomeScreenController homeScreenController;
+
+  @override
+  Widget build(BuildContext context) {
+    final scrollController = ScrollController();
+    homeScreenController.contentScrollControllers.add(scrollController);
+    
+    return QuickPicksWidget(
+      content: quickPicks,
+      scrollController: scrollController,
+    );
+  }
+}
+
+// Memoized Artist Carousel Widget
+class _MemoizedArtistCarousel extends StatelessWidget {
+  const _MemoizedArtistCarousel({
+    required this.artists,
+    required this.title,
+  });
+
+  final List<Artist> artists;
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return ArtistCarouselWidget(
+      title: title,
+      artists: artists,
+    );
+  }
+}
+
+// Memoized Content List Widget
+class _MemoizedContentListWidget extends StatelessWidget {
+  const _MemoizedContentListWidget({
+    required this.content,
+    required this.homeScreenController,
+  });
+
+  final dynamic content;
+  final HomeScreenController homeScreenController;
+
+  @override
+  Widget build(BuildContext context) {
+    final scrollController = ScrollController();
+    homeScreenController.contentScrollControllers.add(scrollController);
+    
+    return ContentListWidget(
+      content: content,
+      scrollController: scrollController,
+    );
   }
 }

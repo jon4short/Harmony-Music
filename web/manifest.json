@@ -1,11 +1,11 @@
 {
-    "name": "harmonymusic",
-    "short_name": "harmonymusic",
+    "name": "Harmonic",
+    "short_name": "Harmonic",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "A cross platform app for music streaming with perfect harmony.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
